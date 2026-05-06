@@ -24,6 +24,7 @@ from .beatsaver import BeatSaverClient
 from .config import apply_overrides, load_config
 from .downloader import DownloadManager
 from .llm import OllamaJudge
+from .match_cache import MatchCache, build_match_cache_namespace
 from .matching import Matcher
 from .models import DownloadResult, MatchResult, RunReport, ensure_directory
 from .netease import NeteaseClient
@@ -154,6 +155,15 @@ async def run_sync(
         search_with_artists=search_with_artists,
         ollama_concurrency=ollama_concurrency,
     )
+    match_cache = MatchCache(
+        cache_dir / "matches.json",
+        namespace=build_match_cache_namespace(
+            min_confidence=min_confidence,
+            search_with_artists=search_with_artists,
+            ollama_model=ollama_model,
+            ollama_fallback_model=ollama_fallback_model,
+        ),
+    )
 
     downloader = DownloadManager(
         downloads_dir=downloads_dir,
@@ -166,6 +176,7 @@ async def run_sync(
         await run_pipeline(
             songs=songs,
             matcher=matcher,
+            match_cache=match_cache,
             downloader=downloader,
             report=report,
             report_dir=reports_dir,
@@ -182,6 +193,7 @@ async def run_sync(
 async def run_pipeline(
     songs,
     matcher: Matcher,
+    match_cache: MatchCache,
     downloader: DownloadManager,
     report: RunReport,
     report_dir: Path,
@@ -248,7 +260,12 @@ async def run_pipeline(
                     return
                 progress.update(match_task, description=f"Matching: {song.name[:42]}")
                 try:
-                    match = await matcher.match_song(song)
+                    match = match_cache.get(song)
+                    if match:
+                        logging.info("Using cached match for %s - %s: %s", song.name, ", ".join(song.artist_names), match.status)
+                    else:
+                        match = await matcher.match_song(song)
+                        match_cache.set(match)
                     await record_match(match)
                     if match.status == "matched":
                         await download_queue.put(match)

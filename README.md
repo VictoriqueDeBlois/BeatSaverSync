@@ -151,8 +151,9 @@ BeatSaver 搜索请求失败时的重试次数。默认 `3`。如果日志里经
 - `output/downloads/*.zip`：下载好的 BeatSaver 谱面 zip。
 - `output/downloads/index.json`：已下载版本 hash 索引，用来跳过重复谱面。
 - `output/cache/beatsaver_searches.json`：BeatSaver 搜索缓存。
+- `output/cache/matches.json`：网易云歌曲到匹配结果的缓存，用来跳过已经匹配过的歌曲和减少 LLM 调用。
 - `output/logs/beatsaver-sync.log`：运行日志。
 - `output/reports/report.md`：方便人工查看的报告。
 - `output/reports/report.json`：结构化报告。
 
-下载按 BeatSaver 版本 hash 去重。只有索引记录存在，并且对应 zip 文件仍然存在时，才会认为该谱面已经下载过。
+BeatSaver 搜索缓存按搜索关键词复用，所以同名歌、翻唱、不同歌手版本可以共享搜索结果。匹配缓存按网易云歌曲 ID、歌名、歌手和关键匹配配置区分，不会把翻唱直接当成同一个匹配结果复用。下载按 BeatSaver 版本 hash 去重。只有索引记录存在，并且对应 zip 文件仍然存在时，才会认为该谱面已经下载过。

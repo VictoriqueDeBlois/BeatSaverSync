@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from beatsaver_sync.cli import run_pipeline
+from beatsaver_sync.match_cache import MatchCache
 from beatsaver_sync.models import BeatSaverMap, BeatSaverVersion, DownloadResult, MatchResult, NeteaseSong, RunReport
 
 
@@ -45,6 +46,7 @@ async def test_pipeline_downloads_matches_as_they_are_found(tmp_path: Path) -> N
     await run_pipeline(
         songs=songs,
         matcher=FakeMatcher(),
+        match_cache=MatchCache(tmp_path / "matches.json", namespace="test"),
         downloader=downloader,
         report=report,
         report_dir=tmp_path,
@@ -56,3 +58,42 @@ async def test_pipeline_downloads_matches_as_they_are_found(tmp_path: Path) -> N
     assert report.matched == 2
     assert report.downloaded == 2
     assert (tmp_path / "report.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_uses_cached_match(tmp_path: Path) -> None:
+    song = NeteaseSong(id=1, name="Cached")
+    cache = MatchCache(tmp_path / "matches.json", namespace="test")
+    version = BeatSaverVersion(hash="hash-cached", download_url="https://example.test/map.zip")
+    selected = BeatSaverMap(
+        id="map-cached",
+        name="Cached",
+        song_name="Cached",
+        song_author_name="Artist",
+        versions=[version],
+    )
+    cache.set(
+        MatchResult(
+            song=song,
+            status="matched",
+            confidence=0.9,
+            selected=selected,
+            selected_version=version,
+        )
+    )
+    report = RunReport(total_songs=1, output_dir=str(tmp_path))
+    downloader = FakeDownloader()
+
+    await run_pipeline(
+        songs=[song],
+        matcher=FakeMatcher(),
+        match_cache=cache,
+        downloader=downloader,
+        report=report,
+        report_dir=tmp_path,
+        search_concurrency=1,
+        download_concurrency=1,
+    )
+
+    assert downloader.downloaded == [1]
+    assert report.matched == 1
