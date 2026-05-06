@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 from pathlib import Path
 from urllib.parse import quote
 
@@ -13,10 +14,11 @@ LOGGER = logging.getLogger(__name__)
 
 
 class BeatSaverClient:
-    def __init__(self, cache_path: Path, timeout: float = 30.0, force_refresh: bool = False) -> None:
+    def __init__(self, cache_path: Path, timeout: float = 30.0, force_refresh: bool = False, retries: int = 3) -> None:
         self.cache_path = cache_path
         self.timeout = timeout
         self.force_refresh = force_refresh
+        self.retries = retries
         self.cache: dict[str, list[dict]] = read_json(cache_path, {})
         self.headers = {"User-Agent": "beatsaver-sync/0.1 (+https://beatsaver.com)"}
 
@@ -25,10 +27,22 @@ class BeatSaverClient:
         if not self.force_refresh and key in self.cache:
             return [parse_map(item) for item in self.cache[key]]
         url = f"https://beatsaver.com/api/search/text/{page}?q={quote(query)}"
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True, headers=self.headers) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            data = response.json()
+        last_error: Exception | None = None
+        for attempt in range(1, self.retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True, headers=self.headers) as client:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    data = response.json()
+                break
+            except (httpx.HTTPError, httpx.TimeoutException) as exc:
+                last_error = exc
+                LOGGER.warning("BeatSaver search attempt %s/%s failed for %r: %s", attempt, self.retries, query, exc)
+                if attempt < self.retries:
+                    await asyncio.sleep(1.5 * attempt)
+        else:
+            assert last_error is not None
+            raise last_error
         docs = data.get("docs") or []
         self.cache[key] = docs
         write_json(self.cache_path, self.cache)

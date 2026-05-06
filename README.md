@@ -51,6 +51,7 @@ uv run beatsaver-sync --config config.json
   "cookie_file": ".secrets/netease.cookie",
   "output": "output",
   "search_concurrency": 5,
+  "search_retries": 3,
   "download_concurrency": 3,
   "ollama_concurrency": 1,
   "ollama_model": "qwen3.6:27b",
@@ -98,6 +99,10 @@ uv run beatsaver-sync --limit 10
 `search_concurrency`
 
 BeatSaver 搜索和匹配阶段的并发数。默认 `5` 比较温和。调大可以更快，但也更容易遇到网络波动或接口限流；如果搜索经常失败，可以调低到 `2` 或 `3`。
+
+`search_retries`
+
+BeatSaver 搜索请求失败时的重试次数。默认 `3`。如果日志里经常看到 `ConnectError` 或临时网络错误，可以保持或调高；如果你想失败得更快，可以调低。
 
 `download_concurrency`
 

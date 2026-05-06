@@ -55,6 +55,7 @@ def sync_command(
     cookie_file: Annotated[Path | None, typer.Option("--cookie-file", help="NetEase cookie file path.")] = None,
     output: Annotated[Path | None, typer.Option("--output", help="Output directory.")] = None,
     search_concurrency: Annotated[int | None, typer.Option("--search-concurrency", min=1)] = None,
+    search_retries: Annotated[int | None, typer.Option("--search-retries", min=1)] = None,
     download_concurrency: Annotated[int | None, typer.Option("--download-concurrency", min=1)] = None,
     ollama_concurrency: Annotated[int | None, typer.Option("--ollama-concurrency", min=1)] = None,
     ollama_model: Annotated[str | None, typer.Option("--ollama-model")] = None,
@@ -71,6 +72,7 @@ def sync_command(
             "cookie_file": cookie_file,
             "output": output,
             "search_concurrency": search_concurrency,
+            "search_retries": search_retries,
             "download_concurrency": download_concurrency,
             "ollama_concurrency": ollama_concurrency,
             "ollama_model": ollama_model,
@@ -88,6 +90,7 @@ def sync_command(
             cookie_file=config.cookie_file,
             output=config.output,
             search_concurrency=config.search_concurrency,
+            search_retries=config.search_retries,
             download_concurrency=config.download_concurrency,
             ollama_concurrency=config.ollama_concurrency,
             ollama_model=config.ollama_model,
@@ -104,6 +107,7 @@ async def run_sync(
     cookie_file: Path,
     output: Path,
     search_concurrency: int,
+    search_retries: int,
     download_concurrency: int,
     ollama_concurrency: int,
     ollama_model: str,
@@ -128,7 +132,11 @@ async def run_sync(
     report.total_songs = len(songs)
     console.print(f"[bold]Loaded {len(songs)} NetEase songs.[/bold]")
 
-    beatsaver = BeatSaverClient(cache_path=cache_dir / "beatsaver_searches.json", force_refresh=force_refresh_search)
+    beatsaver = BeatSaverClient(
+        cache_path=cache_dir / "beatsaver_searches.json",
+        force_refresh=force_refresh_search,
+        retries=search_retries,
+    )
     judge = OllamaJudge(model=ollama_model, fallback_model=ollama_fallback_model)
     matcher = Matcher(
         beatsaver=beatsaver,

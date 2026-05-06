@@ -10,6 +10,7 @@ def test_load_config_defaults_when_missing(tmp_path: Path) -> None:
 
     assert config.cookie_file == Path(".secrets/netease.cookie")
     assert config.search_concurrency == 5
+    assert config.search_retries == 3
     assert config.limit is None
 
 
@@ -21,6 +22,7 @@ def test_load_config_from_json(tmp_path: Path) -> None:
           "cookie_file": ".secrets/custom.cookie",
           "output": "custom-output",
           "search_concurrency": 9,
+          "search_retries": 4,
           "limit": 20
         }
         """,
@@ -32,6 +34,7 @@ def test_load_config_from_json(tmp_path: Path) -> None:
     assert config.cookie_file == Path(".secrets/custom.cookie")
     assert config.output == Path("custom-output")
     assert config.search_concurrency == 9
+    assert config.search_retries == 4
     assert config.limit == 20
 
 

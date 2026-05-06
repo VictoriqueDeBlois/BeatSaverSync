@@ -50,7 +50,13 @@ class OllamaJudge:
         return str(data.get("response", ""))
 
     def _parse(self, response: str) -> tuple[str | None, float, str]:
-        data = json.loads(response)
+        cleaned = response.strip()
+        if not cleaned.startswith("{"):
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start >= 0 and end > start:
+                cleaned = cleaned[start : end + 1]
+        data = json.loads(cleaned)
         selected_id = data.get("selected_id")
         if selected_id in ("", "none", "null"):
             selected_id = None

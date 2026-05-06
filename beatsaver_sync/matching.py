@@ -83,6 +83,8 @@ def score_candidate(song: NeteaseSong, item: BeatSaverMap) -> CandidateScore:
     score = (title_score * 0.48) + (full_title_score * 0.2) + (artist_score * 0.22) + popularity + difficulty_bonus(item)
     if artist_score < 0.45 and title_score < 0.92:
         score -= 0.18
+    if song.artist_names and artist_score < 0.45:
+        score = min(score, 0.68)
     score = max(0.0, min(score, 1.0))
     reason = f"title={title_score:.2f}, full_title={full_title_score:.2f}, artist={artist_score:.2f}"
     return CandidateScore(item, score, reason)
@@ -108,15 +110,24 @@ class Matcher:
     async def match_song(self, song: NeteaseSong) -> MatchResult:
         queries = build_queries(song)
         seen: dict[str, BeatSaverMap] = {}
-        try:
-            for query in queries:
+        search_errors: list[str] = []
+        for query in queries:
+            try:
                 for item in await self.beatsaver.search(query):
                     seen.setdefault(item.id, item)
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.exception("BeatSaver search failed for %s", song.name)
-            return MatchResult(song=song, status="error", queries=queries, error=str(exc), reason="BeatSaver search failed.")
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("BeatSaver search failed for %s with query %r: %s", song.name, query, exc)
+                search_errors.append(f"{query}: {exc}")
         candidates = list(seen.values())
         if not candidates:
+            if search_errors:
+                return MatchResult(
+                    song=song,
+                    status="error",
+                    queries=queries,
+                    error="; ".join(search_errors),
+                    reason="All BeatSaver search queries failed.",
+                )
             return MatchResult(song=song, status="not_found", queries=queries, reason="No BeatSaver search results.")
         scored = sorted((score_candidate(song, item) for item in candidates), key=lambda item: item.score, reverse=True)
         best = scored[0]

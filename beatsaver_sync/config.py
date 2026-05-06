@@ -15,6 +15,7 @@ class SyncConfig(BaseModel):
     cookie_file: Path = Path(".secrets/netease.cookie")
     output: Path = Path("output")
     search_concurrency: int = Field(default=5, ge=1)
+    search_retries: int = Field(default=3, ge=1)
     download_concurrency: int = Field(default=3, ge=1)
     ollama_concurrency: int = Field(default=1, ge=1)
     ollama_model: str = "qwen3.6:27b"

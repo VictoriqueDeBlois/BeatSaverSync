@@ -44,6 +44,13 @@ def test_score_prefers_correct_artist_over_more_playable_wrong_song() -> None:
     assert score_candidate(song, correct).score > score_candidate(song, wrong_but_easy).score
 
 
+def test_score_caps_low_artist_match_below_auto_download_threshold() -> None:
+    song = NeteaseSong(id=1, name="A cup of coffee", artists=[Artist(name="ChiliChill乐团")])
+    wrong_artist = make_map("a", "Last Cup Of Coffee", "LilyPitchu, Valkyrae, Natsumiii", ["Easy", "Normal", "Hard"])
+
+    assert score_candidate(song, wrong_artist).score < 0.72
+
+
 def test_score_rewards_low_difficulty_when_song_matches() -> None:
     song = NeteaseSong(id=1, name="All Alone With You", artists=[Artist(name="EGOIST")])
     expert_plus_only = make_map("a", "All Alone With You", "EGOIST", ["ExpertPlus"])
