@@ -46,17 +46,31 @@ def strip_parenthetical(value: str) -> str:
     return re.sub(r"[\[(（【].*?[\])）】]", " ", value).strip()
 
 
-def build_queries(song: NeteaseSong) -> list[str]:
+def build_queries(song: NeteaseSong, include_artists: bool = False) -> list[str]:
     title = song.name.strip()
     clean_title = normalize_text(strip_parenthetical(title)) or normalize_text(title)
     artists = song.artist_names[:3]
     queries: list[str] = []
-    for artist in artists[:2]:
-        queries.append(f"{clean_title} {artist}".strip())
+    queries.extend(split_title_queries(clean_title))
+    if include_artists:
+        for artist in artists[:2]:
+            queries.append(f"{clean_title} {artist}".strip())
     queries.append(clean_title)
     if title and title != clean_title:
         queries.append(title)
     return list(dict.fromkeys(query for query in queries if query))
+
+
+def split_title_queries(clean_title: str) -> list[str]:
+    if not clean_title:
+        return []
+    parts = re.findall(r"[\u3040-\u30ff\u3400-\u9fff]+|[a-z0-9][a-z0-9' ]*[a-z0-9]", clean_title, re.IGNORECASE)
+    queries: list[str] = []
+    for part in parts:
+        normalized = re.sub(r"\s+", " ", part).strip()
+        if len(normalized) >= 2:
+            queries.append(normalized)
+    return queries
 
 
 def difficulty_bonus(item: BeatSaverMap) -> float:
@@ -98,6 +112,7 @@ class Matcher:
         min_confidence: float = 0.72,
         llm_margin: float = 0.08,
         llm_threshold: float = 0.82,
+        search_with_artists: bool = False,
         ollama_concurrency: int = 1,
     ) -> None:
         self.beatsaver = beatsaver
@@ -105,10 +120,11 @@ class Matcher:
         self.min_confidence = min_confidence
         self.llm_margin = llm_margin
         self.llm_threshold = llm_threshold
+        self.search_with_artists = search_with_artists
         self.ollama_sem = asyncio.Semaphore(max(1, ollama_concurrency))
 
     async def match_song(self, song: NeteaseSong) -> MatchResult:
-        queries = build_queries(song)
+        queries = build_queries(song, include_artists=self.search_with_artists)
         LOGGER.info("Search queries for %s - %s: %s", song.name, ", ".join(song.artist_names), queries)
         seen: dict[str, BeatSaverMap] = {}
         search_errors: list[str] = []

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 
 import httpx
 
@@ -10,11 +11,22 @@ from .models import BeatSaverMap, NeteaseSong
 LOGGER = logging.getLogger(__name__)
 
 
+class OllamaResponseError(RuntimeError):
+    pass
+
+
+@dataclass
+class OllamaCallFailure:
+    model: str
+    error: Exception
+    can_fallback: bool
+
+
 class OllamaJudge:
     def __init__(
         self,
         model: str = "qwen3.6:27b",
-        fallback_model: str = "qwen3.5:35b",
+        fallback_model: str | None = None,
         base_url: str = "http://127.0.0.1:11434",
         timeout: float = 120.0,
     ) -> None:
@@ -27,13 +39,37 @@ class OllamaJudge:
         if not candidates:
             return None, 0.0, "No candidates."
         prompt = self._prompt(song, candidates[:8])
-        for model in [self.model, self.fallback_model]:
+        failures: list[OllamaCallFailure] = []
+        models = [self.model]
+        if self.fallback_model:
+            models.append(self.fallback_model)
+        for index, model in enumerate(models):
             try:
                 result = await self._call(model, prompt)
                 return self._parse(result)
+            except OllamaResponseError as exc:
+                LOGGER.warning("Ollama judge returned invalid JSON with %s: %s", model, exc)
+                return None, 0.0, f"Ollama model {model} returned invalid JSON."
+            except httpx.HTTPStatusError as exc:
+                can_fallback = exc.response.status_code == 404
+                LOGGER.warning("Ollama judge failed with %s: %s", model, exc)
+                failures.append(OllamaCallFailure(model=model, error=exc, can_fallback=can_fallback))
+                if index == 0 and self.fallback_model and can_fallback:
+                    continue
+                break
+            except httpx.HTTPError as exc:
+                LOGGER.warning("Ollama judge failed with %s: %s", model, exc)
+                failures.append(OllamaCallFailure(model=model, error=exc, can_fallback=True))
+                if index == 0 and self.fallback_model:
+                    continue
+                break
             except Exception as exc:  # noqa: BLE001 - keep the sync run resilient.
                 LOGGER.warning("Ollama judge failed with %s: %s", model, exc)
-        return None, 0.0, "Ollama unavailable or returned invalid JSON."
+                failures.append(OllamaCallFailure(model=model, error=exc, can_fallback=False))
+                break
+        if self.fallback_model:
+            return None, 0.0, "Ollama unavailable; fallback did not produce a valid judgment."
+        return None, 0.0, "Ollama unavailable or disabled fallback did not run."
 
     async def _call(self, model: str, prompt: str) -> str:
         payload = {
@@ -56,7 +92,11 @@ class OllamaJudge:
             end = cleaned.rfind("}")
             if start >= 0 and end > start:
                 cleaned = cleaned[start : end + 1]
-        data = json.loads(cleaned)
+        try:
+            data = json.loads(cleaned)
+        except json.JSONDecodeError as exc:
+            preview = response.strip().replace("\n", " ")[:300]
+            raise OllamaResponseError(f"{exc}; response preview={preview!r}") from exc
         selected_id = data.get("selected_id")
         if selected_id in ("", "none", "null"):
             selected_id = None

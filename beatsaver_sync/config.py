@@ -14,12 +14,13 @@ class SyncConfig(BaseModel):
     netease_liked: bool = True
     cookie_file: Path = Path(".secrets/netease.cookie")
     output: Path = Path("output")
+    search_with_artists: bool = False
     search_concurrency: int = Field(default=5, ge=1)
     search_retries: int = Field(default=3, ge=1)
     download_concurrency: int = Field(default=3, ge=1)
     ollama_concurrency: int = Field(default=1, ge=1)
     ollama_model: str = "qwen3.6:27b"
-    ollama_fallback_model: str = "qwen3.5:35b"
+    ollama_fallback_model: str | None = None
     min_confidence: float = Field(default=0.72, ge=0.0, le=1.0)
     console_logging: bool = False
     force_refresh_search: bool = False

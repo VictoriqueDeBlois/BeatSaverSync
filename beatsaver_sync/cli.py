@@ -55,6 +55,7 @@ def sync_command(
     ] = None,
     cookie_file: Annotated[Path | None, typer.Option("--cookie-file", help="NetEase cookie file path.")] = None,
     output: Annotated[Path | None, typer.Option("--output", help="Output directory.")] = None,
+    search_with_artists: Annotated[bool | None, typer.Option("--search-with-artists/--title-only-search")] = None,
     search_concurrency: Annotated[int | None, typer.Option("--search-concurrency", min=1)] = None,
     search_retries: Annotated[int | None, typer.Option("--search-retries", min=1)] = None,
     download_concurrency: Annotated[int | None, typer.Option("--download-concurrency", min=1)] = None,
@@ -73,6 +74,7 @@ def sync_command(
             "netease_liked": netease_liked,
             "cookie_file": cookie_file,
             "output": output,
+            "search_with_artists": search_with_artists,
             "search_concurrency": search_concurrency,
             "search_retries": search_retries,
             "download_concurrency": download_concurrency,
@@ -92,6 +94,7 @@ def sync_command(
         run_sync(
             cookie_file=config.cookie_file,
             output=config.output,
+            search_with_artists=config.search_with_artists,
             search_concurrency=config.search_concurrency,
             search_retries=config.search_retries,
             download_concurrency=config.download_concurrency,
@@ -110,6 +113,7 @@ def sync_command(
 async def run_sync(
     cookie_file: Path,
     output: Path,
+    search_with_artists: bool,
     search_concurrency: int,
     search_retries: int,
     download_concurrency: int,
@@ -147,6 +151,7 @@ async def run_sync(
         beatsaver=beatsaver,
         judge=judge,
         min_confidence=min_confidence,
+        search_with_artists=search_with_artists,
         ollama_concurrency=ollama_concurrency,
     )
 

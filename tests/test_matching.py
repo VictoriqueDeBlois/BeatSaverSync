@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from beatsaver_sync.matching import build_queries, score_candidate
+from beatsaver_sync.matching import build_queries, score_candidate, split_title_queries
 from beatsaver_sync.models import Artist, BeatSaverDifficulty, BeatSaverMap, BeatSaverVersion, NeteaseSong
 
 
@@ -32,8 +32,24 @@ def test_build_queries_removes_common_noise() -> None:
 
     queries = build_queries(song)
 
-    assert queries[0] == "all alone with you EGOIST"
+    assert queries[0] == "all alone with you"
     assert "all alone with you" in queries
+    assert all("EGOIST" not in query for query in queries)
+
+
+def test_build_queries_can_include_artists_when_enabled() -> None:
+    song = NeteaseSong(id=1, name="All Alone With You", artists=[Artist(name="EGOIST")])
+
+    queries = build_queries(song, include_artists=True)
+
+    assert "all alone with you EGOIST" in queries
+
+
+def test_split_title_queries_handles_multilingual_title() -> None:
+    queries = split_title_queries("白夜洇润 unfurling night")
+
+    assert "白夜洇润" in queries
+    assert "unfurling night" in queries
 
 
 def test_score_prefers_correct_artist_over_more_playable_wrong_song() -> None:

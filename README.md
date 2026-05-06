@@ -50,12 +50,13 @@ uv run beatsaver-sync --config config.json
   "netease_liked": true,
   "cookie_file": ".secrets/netease.cookie",
   "output": "output",
+  "search_with_artists": false,
   "search_concurrency": 5,
   "search_retries": 3,
   "download_concurrency": 3,
   "ollama_concurrency": 1,
   "ollama_model": "qwen3.6:27b",
-  "ollama_fallback_model": "qwen3.5:35b",
+  "ollama_fallback_model": null,
   "min_confidence": 0.72,
   "console_logging": false,
   "force_refresh_search": false,
@@ -97,6 +98,10 @@ uv run beatsaver-sync --limit 10
 
 输出目录。默认是 `output`，下载的 zip、缓存、日志和报告都会放在这里。如果你想把结果放到其他盘或单独目录，可以改成绝对路径或相对路径。
 
+`search_with_artists`
+
+搜索 BeatSaver 时是否把歌手名拼进关键词。默认 `false`，只用歌名和拆分后的标题片段搜索，例如 `白夜洇润 Unfurling Night` 会生成 `白夜洇润 unfurling night`、`白夜洇润`、`unfurling night` 等关键词。一般不建议打开，因为 BeatSaver 标题里经常没有网易云歌手名；是否歌手匹配会在候选评分和 LLM 判断阶段处理。
+
 `search_concurrency`
 
 BeatSaver 搜索和匹配阶段的并发数。默认 `5` 比较温和。调大可以更快，但也更容易遇到网络波动或接口限流；如果搜索经常失败，可以调低到 `2` 或 `3`。
@@ -119,7 +124,7 @@ BeatSaver 搜索请求失败时的重试次数。默认 `3`。如果日志里经
 
 `ollama_fallback_model`
 
-主模型不可用或调用失败时使用的备用模型。默认 `qwen3.5:35b`，因为你本地已经有这个模型。备用模型也失败时，工具会退回规则打分结果或把结果标为低置信。
+主模型不可用时使用的备用模型。默认 `null`，表示不启用备用模型，避免显卡在两个大模型之间切换。只有你明确想用备用模型时才改成模型名。注意：如果主模型已经返回内容但格式不对，工具不会再调用备用模型，而是把该次 LLM 判断视为失败并回退到规则结果。
 
 `min_confidence`
 
