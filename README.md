@@ -1,41 +1,41 @@
 # BeatSaver Sync
 
-Download BeatSaver maps that best match your NetEase Cloud Music liked playlist.
+根据你的网易云“我喜欢的音乐”列表，自动搜索并下载最匹配的 BeatSaver 谱面。
 
-## Setup
+## 安装
 
-Install dependencies with `uv`:
+使用 `uv` 安装依赖：
 
 ```powershell
 uv sync
 ```
 
-If you want the default LLM-assisted matching model, pull it once:
+如果要使用默认的本地大模型辅助匹配，先拉取一次模型：
 
 ```powershell
 ollama pull qwen3.6:27b
 ```
 
-The tool falls back to `qwen3.5:35b` if the default model is unavailable.
+如果默认模型不可用，工具会回退到 `qwen3.5:35b`。
 
-## NetEase Cookie
+## 网易云 Cookie
 
-The liked playlist usually needs a logged-in cookie.
+红心歌单通常需要登录态 cookie 才能完整读取。
 
-1. Log in at `https://music.163.com`.
-2. Open browser developer tools and inspect any `music.163.com` network request.
-3. Copy the full `Cookie` request header.
-4. Save it to `.secrets/netease.cookie`.
+1. 在浏览器登录 `https://music.163.com`。
+2. 打开浏览器开发者工具，查看任意 `music.163.com` 的网络请求。
+3. 复制请求头里的完整 `Cookie`。
+4. 保存到 `.secrets/netease.cookie`。
 
-`.secrets/` is ignored by git. The cookie is only sent to NetEase and is not written to reports or logs.
+`.secrets/` 已被 git 忽略。cookie 只会发送给网易云，不会写入报告或日志。
 
-## Run
+## 运行
 
 ```powershell
 uv run beatsaver-sync --netease-liked --cookie-file .secrets/netease.cookie
 ```
 
-Useful options:
+常用参数：
 
 ```powershell
 uv run beatsaver-sync `
@@ -48,19 +48,19 @@ uv run beatsaver-sync `
   --min-confidence 0.72
 ```
 
-For a smoke test:
+如果想先小范围试跑：
 
 ```powershell
 uv run beatsaver-sync --cookie-file .secrets/netease.cookie --limit 10
 ```
 
-## Output
+## 输出
 
-- `output/downloads/*.zip`: downloaded BeatSaver maps.
-- `output/downloads/index.json`: downloaded version-hash index used to skip duplicates.
-- `output/cache/beatsaver_searches.json`: BeatSaver search cache.
-- `output/logs/beatsaver-sync.log`: run log.
-- `output/reports/report.md`: human-readable report.
-- `output/reports/report.json`: structured report.
+- `output/downloads/*.zip`：下载好的 BeatSaver 谱面 zip。
+- `output/downloads/index.json`：已下载版本 hash 索引，用来跳过重复谱面。
+- `output/cache/beatsaver_searches.json`：BeatSaver 搜索缓存。
+- `output/logs/beatsaver-sync.log`：运行日志。
+- `output/reports/report.md`：方便人工查看的报告。
+- `output/reports/report.json`：结构化报告。
 
-Downloads are deduplicated by BeatSaver version hash. A record is considered downloaded only when the index entry exists and the zip file still exists on disk.
+下载按 BeatSaver 版本 hash 去重。只有索引记录存在，并且对应 zip 文件仍然存在时，才会认为该谱面已经下载过。
