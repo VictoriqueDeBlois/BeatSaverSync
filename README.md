@@ -57,6 +57,7 @@ uv run beatsaver-sync --config config.json
   "ollama_model": "qwen3.6:27b",
   "ollama_fallback_model": "qwen3.5:35b",
   "min_confidence": 0.72,
+  "console_logging": false,
   "force_refresh_search": false,
   "redownload": false,
   "limit": null
@@ -123,6 +124,10 @@ BeatSaver 搜索请求失败时的重试次数。默认 `3`。如果日志里经
 `min_confidence`
 
 自动下载的最低置信度阈值，范围是 `0.0` 到 `1.0`，默认 `0.72`。调高会减少误下载，但跳过更多歌曲；调低会下载更多候选，但错配风险更高。
+
+`console_logging`
+
+是否把运行日志也显示在终端。默认 `false`，终端只显示进度条和最终报告路径，详细日志仍然写入 `output/logs/beatsaver-sync.log`。如果你想边跑边看 HTTP 请求、搜索关键词、Ollama 警告等细节，可以改成 `true` 或临时加 `--console-log`。
 
 `force_refresh_search`
 

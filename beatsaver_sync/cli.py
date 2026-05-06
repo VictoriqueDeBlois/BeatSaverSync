@@ -33,15 +33,15 @@ app = typer.Typer(no_args_is_help=True, help="Download BeatSaver maps that match
 console = Console()
 
 
-def setup_logging(log_path: Path) -> None:
+def setup_logging(log_path: Path, console_logging: bool) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    handlers: list[logging.Handler] = [logging.FileHandler(log_path, encoding="utf-8")]
+    if console_logging:
+        handlers.append(RichHandler(console=console, show_path=False, rich_tracebacks=True))
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        handlers=[
-            logging.FileHandler(log_path, encoding="utf-8"),
-            RichHandler(console=console, show_path=False, rich_tracebacks=True),
-        ],
+        handlers=handlers,
         force=True,
     )
 
@@ -61,6 +61,7 @@ def sync_command(
     ollama_model: Annotated[str | None, typer.Option("--ollama-model")] = None,
     ollama_fallback_model: Annotated[str | None, typer.Option("--ollama-fallback-model")] = None,
     min_confidence: Annotated[float | None, typer.Option("--min-confidence", min=0.0, max=1.0)] = None,
+    console_logging: Annotated[bool | None, typer.Option("--console-log/--no-console-log")] = None,
     force_refresh_search: Annotated[bool | None, typer.Option("--force-refresh-search/--use-search-cache")] = None,
     redownload: Annotated[bool | None, typer.Option("--redownload/--skip-downloaded")] = None,
     limit: Annotated[int | None, typer.Option("--limit", min=1, help="Limit songs for smoke testing.")] = None,
@@ -78,6 +79,7 @@ def sync_command(
             "ollama_model": ollama_model,
             "ollama_fallback_model": ollama_fallback_model,
             "min_confidence": min_confidence,
+            "console_logging": console_logging,
             "force_refresh_search": force_refresh_search,
             "redownload": redownload,
             "limit": limit,
@@ -96,6 +98,7 @@ def sync_command(
             ollama_model=config.ollama_model,
             ollama_fallback_model=config.ollama_fallback_model,
             min_confidence=config.min_confidence,
+            console_logging=config.console_logging,
             force_refresh_search=config.force_refresh_search,
             redownload=config.redownload,
             limit=config.limit,
@@ -113,6 +116,7 @@ async def run_sync(
     ollama_model: str,
     ollama_fallback_model: str,
     min_confidence: float,
+    console_logging: bool,
     force_refresh_search: bool,
     redownload: bool,
     limit: int | None,
@@ -121,7 +125,7 @@ async def run_sync(
     cache_dir = ensure_directory(output / "cache")
     downloads_dir = ensure_directory(output / "downloads")
     reports_dir = ensure_directory(output / "reports")
-    setup_logging(output / "logs" / "beatsaver-sync.log")
+    setup_logging(output / "logs" / "beatsaver-sync.log", console_logging=console_logging)
     report = RunReport(output_dir=str(output))
     logging.info("Starting BeatSaver sync.")
 

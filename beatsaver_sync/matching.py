@@ -109,10 +109,12 @@ class Matcher:
 
     async def match_song(self, song: NeteaseSong) -> MatchResult:
         queries = build_queries(song)
+        LOGGER.info("Search queries for %s - %s: %s", song.name, ", ".join(song.artist_names), queries)
         seen: dict[str, BeatSaverMap] = {}
         search_errors: list[str] = []
         for query in queries:
             try:
+                LOGGER.info("BeatSaver search query for %s: %r", song.name, query)
                 for item in await self.beatsaver.search(query):
                     seen.setdefault(item.id, item)
             except Exception as exc:  # noqa: BLE001

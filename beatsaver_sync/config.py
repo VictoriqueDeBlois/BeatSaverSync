@@ -21,6 +21,7 @@ class SyncConfig(BaseModel):
     ollama_model: str = "qwen3.6:27b"
     ollama_fallback_model: str = "qwen3.5:35b"
     min_confidence: float = Field(default=0.72, ge=0.0, le=1.0)
+    console_logging: bool = False
     force_refresh_search: bool = False
     redownload: bool = False
     limit: int | None = Field(default=None, ge=1)

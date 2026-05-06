@@ -9,6 +9,7 @@
   "ollama_model": "qwen3.6:27b",
   "ollama_fallback_model": "qwen3.5:35b",
   "min_confidence": 0.72,
+  "console_logging": false,
   "force_refresh_search": false,
   "redownload": false,
   "limit": null
