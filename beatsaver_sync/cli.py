@@ -155,36 +155,69 @@ async def run_sync(
         ollama_concurrency=ollama_concurrency,
     )
 
-    matches = await match_all(songs, matcher, search_concurrency)
-    report.matches = matches
-    report.matched = sum(1 for item in matches if item.status == "matched")
-    report.low_confidence = sum(1 for item in matches if item.status == "low_confidence")
-    report.not_found = sum(1 for item in matches if item.status == "not_found")
-    report.errors = sum(1 for item in matches if item.status == "error")
-
     downloader = DownloadManager(
         downloads_dir=downloads_dir,
         index_path=downloads_dir / "index.json",
         redownload=redownload,
     )
-    downloads = await download_all([item for item in matches if item.status == "matched"], downloader, download_concurrency)
-    report.downloads = downloads
-    report.downloaded = sum(1 for item in downloads if item.status == "downloaded")
-    report.skipped_existing = sum(1 for item in downloads if item.status == "skipped_existing")
-    report.download_failed = sum(1 for item in downloads if item.status == "failed")
-    report.finish()
-    md_path, json_path = write_report(report, reports_dir)
+    md_path = reports_dir / "report.md"
+    json_path = reports_dir / "report.json"
+    try:
+        await run_pipeline(
+            songs=songs,
+            matcher=matcher,
+            downloader=downloader,
+            report=report,
+            report_dir=reports_dir,
+            search_concurrency=search_concurrency,
+            download_concurrency=download_concurrency,
+        )
+    finally:
+        report.finish()
+        md_path, json_path = write_report(report, reports_dir)
     console.print(f"[green]Done.[/green] Report: {md_path}")
     console.print(f"[dim]JSON report: {json_path}[/dim]")
 
 
-async def match_all(songs, matcher: Matcher, concurrency: int) -> list[MatchResult]:
-    semaphore = asyncio.Semaphore(concurrency)
-    results: list[MatchResult | None] = [None] * len(songs)
+async def run_pipeline(
+    songs,
+    matcher: Matcher,
+    downloader: DownloadManager,
+    report: RunReport,
+    report_dir: Path,
+    search_concurrency: int,
+    download_concurrency: int,
+) -> None:
+    song_queue: asyncio.Queue = asyncio.Queue()
+    download_queue: asyncio.Queue[MatchResult | None] = asyncio.Queue()
+    task_by_hash: dict[str, TaskID] = {}
+    report_lock = asyncio.Lock()
+    for song in songs:
+        song_queue.put_nowait(song)
 
-    async def worker(index: int, song) -> None:
-        async with semaphore:
-            results[index] = await matcher.match_song(song)
+    async def record_match(match: MatchResult) -> None:
+        async with report_lock:
+            report.matches.append(match)
+            if match.status == "matched":
+                report.matched += 1
+            elif match.status == "low_confidence":
+                report.low_confidence += 1
+            elif match.status == "not_found":
+                report.not_found += 1
+            elif match.status == "error":
+                report.errors += 1
+            write_report(report, report_dir)
+
+    async def record_download(result: DownloadResult) -> None:
+        async with report_lock:
+            report.downloads.append(result)
+            if result.status == "downloaded":
+                report.downloaded += 1
+            elif result.status == "skipped_existing":
+                report.skipped_existing += 1
+            elif result.status == "failed":
+                report.download_failed += 1
+            write_report(report, report_dir)
 
     with Progress(
         SpinnerColumn(),
@@ -195,55 +228,66 @@ async def match_all(songs, matcher: Matcher, concurrency: int) -> list[MatchResu
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("Searching and matching", total=len(songs))
-
-        async def tracked(index: int, song) -> None:
-            progress.update(task, description=f"Searching: {song.name[:42]}")
-            await worker(index, song)
-            result = results[index]
-            suffix = result.status if result else "unknown"
-            progress.update(task, advance=1, description=f"Matched: {song.name[:32]} ({suffix})")
-
-        await asyncio.gather(*(tracked(index, song) for index, song in enumerate(songs)))
-    return [item for item in results if item is not None]
-
-
-async def download_all(matches: list[MatchResult], downloader: DownloadManager, concurrency: int) -> list[DownloadResult]:
-    semaphore = asyncio.Semaphore(concurrency)
-    results: list[DownloadResult | None] = [None] * len(matches)
-    task_by_hash: dict[str, TaskID] = {}
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        DownloadColumn(),
-        TransferSpeedColumn(),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        total_task = progress.add_task("Downloading maps", total=len(matches))
+        match_task = progress.add_task("Matching songs", total=len(songs))
+        download_task = progress.add_task("Downloads: 0 queued", total=None)
 
         def update_download(version_hash: str, completed: int, total: int | None) -> None:
             task_id = task_by_hash.get(version_hash)
             if task_id is None:
-                task_id = progress.add_task(version_hash[:10], total=total)
+                task_id = progress.add_task(f"Downloading {version_hash[:10]}", total=total)
                 task_by_hash[version_hash] = task_id
             if total:
                 progress.update(task_id, total=total)
             progress.update(task_id, completed=completed)
 
-        async def worker(index: int, match: MatchResult) -> None:
-            async with semaphore:
-                result = await downloader.download(match, update_download)
-                results[index] = result
-                version = match.selected_version
-                if version and version.hash in task_by_hash:
-                    progress.remove_task(task_by_hash[version.hash])
-                progress.update(total_task, advance=1)
+        async def match_worker(worker_id: int) -> None:
+            while True:
+                try:
+                    song = song_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                progress.update(match_task, description=f"Matching: {song.name[:42]}")
+                try:
+                    match = await matcher.match_song(song)
+                    await record_match(match)
+                    if match.status == "matched":
+                        await download_queue.put(match)
+                        progress.update(download_task, description=f"Downloads: {download_queue.qsize()} queued")
+                    progress.update(match_task, advance=1, description=f"Matched: {song.name[:32]} ({match.status})")
+                finally:
+                    song_queue.task_done()
 
-        await asyncio.gather(*(worker(index, match) for index, match in enumerate(matches)))
-    return [item for item in results if item is not None]
+        async def download_worker(worker_id: int) -> None:
+            while True:
+                match = await download_queue.get()
+                if match is None:
+                    download_queue.task_done()
+                    return
+                try:
+                    result = await downloader.download(match, update_download)
+                    await record_download(result)
+                    version = match.selected_version
+                    if version and version.hash in task_by_hash:
+                        progress.remove_task(task_by_hash[version.hash])
+                        task_by_hash.pop(version.hash, None)
+                    progress.update(
+                        download_task,
+                        advance=1,
+                        description=(
+                            f"Downloads: {download_queue.qsize()} queued, "
+                            f"{report.downloaded} downloaded, {report.skipped_existing} existing, {report.download_failed} failed"
+                        ),
+                    )
+                finally:
+                    download_queue.task_done()
+
+        download_workers = [asyncio.create_task(download_worker(index)) for index in range(download_concurrency)]
+        match_workers = [asyncio.create_task(match_worker(index)) for index in range(search_concurrency)]
+        await asyncio.gather(*match_workers)
+        for _ in download_workers:
+            await download_queue.put(None)
+        await download_queue.join()
+        await asyncio.gather(*download_workers)
 
 
 if __name__ == "__main__":
