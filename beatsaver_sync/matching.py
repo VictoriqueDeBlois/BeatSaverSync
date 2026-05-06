@@ -37,7 +37,7 @@ def normalize_text(value: str) -> str:
     value = re.sub(r"[-_/|:：,，.。!！?？~〜]", " ", value)
     for pattern in NOISE_PATTERNS:
         value = re.sub(pattern, " ", value, flags=re.IGNORECASE)
-    value = re.sub(r"\b(feat|ft|featuring|with)\b.*$", " ", value, flags=re.IGNORECASE)
+    value = re.sub(r"\b(feat|ft|featuring)\b.*$", " ", value, flags=re.IGNORECASE)
     value = re.sub(r"\s+", " ", value)
     return value.strip()
 
