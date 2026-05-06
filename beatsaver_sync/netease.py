@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
-from urllib.parse import quote
 
 import httpx
 
 from .models import Artist, NeteaseSong
 
 LOGGER = logging.getLogger(__name__)
+SONG_DETAIL_BATCH_SIZE = 100
 
 
 class NeteaseError(RuntimeError):
@@ -92,16 +93,29 @@ class NeteaseClient:
                 len(tracks),
                 len(track_ids),
             )
-            return await self._get_song_details(client, track_ids)
+            songs = await self._get_song_details(client, track_ids)
+            if songs:
+                LOGGER.info("Fetched %s/%s NetEase song details.", len(songs), len(track_ids))
+                return songs
+            LOGGER.warning(
+                "NetEase song detail returned 0 songs for %s trackIds; falling back to %s embedded tracks.",
+                len(track_ids),
+                len(tracks),
+            )
+            return [self._parse_song(track) for track in tracks if track.get("id")]
 
     async def _get_song_details(self, client: httpx.AsyncClient, song_ids: list[int]) -> list[NeteaseSong]:
         songs: list[NeteaseSong] = []
-        for start in range(0, len(song_ids), 500):
-            batch = song_ids[start : start + 500]
-            payload = quote(str([{"id": song_id} for song_id in batch]).replace("'", '"'))
-            url = f"https://music.163.com/api/v3/song/detail?c={payload}"
-            data = await self._get_json(client, url)
-            songs.extend(self._parse_song(song) for song in data.get("songs", []) if song.get("id"))
+        for batch in batched(song_ids, SONG_DETAIL_BATCH_SIZE):
+            payload = json.dumps([{"id": song_id} for song_id in batch], separators=(",", ":"))
+            url = "https://music.163.com/api/v3/song/detail"
+            response = await client.get(url, headers=self.headers, params={"c": payload})
+            response.raise_for_status()
+            data = response.json()
+            batch_songs = data.get("songs") or []
+            if not batch_songs:
+                LOGGER.warning("NetEase song detail returned 0 songs for batch starting with %s.", batch[0])
+            songs.extend(self._parse_song(song) for song in batch_songs if song.get("id"))
         return songs
 
     def _parse_song(self, raw: dict) -> NeteaseSong:
@@ -119,3 +133,7 @@ class NeteaseClient:
 
 def extract_track_ids(playlist: dict) -> list[int]:
     return [int(item["id"]) for item in playlist.get("trackIds", []) if item.get("id")]
+
+
+def batched(values: list[int], size: int) -> list[list[int]]:
+    return [values[index : index + size] for index in range(0, len(values), size)]

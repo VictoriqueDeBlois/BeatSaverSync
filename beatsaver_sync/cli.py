@@ -44,6 +44,7 @@ def setup_logging(log_path: Path, console_logging: bool) -> None:
         handlers=handlers,
         force=True,
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 @app.command("sync")
