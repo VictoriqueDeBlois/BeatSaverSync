@@ -77,11 +77,21 @@ class NeteaseClient:
             data = await self._get_json(client, url)
             playlist = data.get("playlist") or {}
             tracks = playlist.get("tracks") or []
-            if tracks:
-                return [self._parse_song(track) for track in tracks if track.get("id")]
-            track_ids = [int(item["id"]) for item in playlist.get("trackIds", []) if item.get("id")]
+            track_ids = extract_track_ids(playlist)
             if not track_ids:
+                if tracks:
+                    LOGGER.info("NetEase playlist %s returned %s embedded tracks.", playlist_id, len(tracks))
+                    return [self._parse_song(track) for track in tracks if track.get("id")]
                 raise NeteaseError("NetEase playlist response did not contain tracks or trackIds.")
+            if len(tracks) >= len(track_ids):
+                LOGGER.info("NetEase playlist %s returned %s embedded tracks.", playlist_id, len(tracks))
+                return [self._parse_song(track) for track in tracks if track.get("id")]
+            LOGGER.info(
+                "NetEase playlist %s returned %s embedded tracks and %s trackIds; fetching full song details.",
+                playlist_id,
+                len(tracks),
+                len(track_ids),
+            )
             return await self._get_song_details(client, track_ids)
 
     async def _get_song_details(self, client: httpx.AsyncClient, song_ids: list[int]) -> list[NeteaseSong]:
@@ -105,3 +115,7 @@ class NeteaseClient:
             album=album.get("name") if isinstance(album, dict) else None,
             duration_ms=raw.get("dt") or raw.get("duration"),
         )
+
+
+def extract_track_ids(playlist: dict) -> list[int]:
+    return [int(item["id"]) for item in playlist.get("trackIds", []) if item.get("id")]
