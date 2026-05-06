@@ -21,6 +21,7 @@ from rich.progress import (
 )
 
 from .beatsaver import BeatSaverClient
+from .config import apply_overrides, load_config
 from .downloader import DownloadManager
 from .llm import OllamaJudge
 from .matching import Matcher
@@ -47,36 +48,54 @@ def setup_logging(log_path: Path) -> None:
 
 @app.command("sync")
 def sync_command(
-    netease_liked: Annotated[bool, typer.Option("--netease-liked", help="Read the logged-in user's liked playlist.")] = True,
-    cookie_file: Annotated[Path, typer.Option("--cookie-file", help="NetEase cookie file path.")] = Path(
-        ".secrets/netease.cookie"
-    ),
-    output: Annotated[Path, typer.Option("--output", help="Output directory.")] = Path("output"),
-    search_concurrency: Annotated[int, typer.Option("--search-concurrency", min=1)] = 5,
-    download_concurrency: Annotated[int, typer.Option("--download-concurrency", min=1)] = 3,
-    ollama_concurrency: Annotated[int, typer.Option("--ollama-concurrency", min=1)] = 1,
-    ollama_model: Annotated[str, typer.Option("--ollama-model")] = "qwen3.6:27b",
-    ollama_fallback_model: Annotated[str, typer.Option("--ollama-fallback-model")] = "qwen3.5:35b",
-    min_confidence: Annotated[float, typer.Option("--min-confidence", min=0.0, max=1.0)] = 0.72,
-    force_refresh_search: Annotated[bool, typer.Option("--force-refresh-search")] = False,
-    redownload: Annotated[bool, typer.Option("--redownload")] = False,
+    config_file: Annotated[Path, typer.Option("--config", help="JSON config file path.")] = Path("config.json"),
+    netease_liked: Annotated[
+        bool | None, typer.Option("--netease-liked/--no-netease-liked", help="Read the logged-in user's liked playlist.")
+    ] = None,
+    cookie_file: Annotated[Path | None, typer.Option("--cookie-file", help="NetEase cookie file path.")] = None,
+    output: Annotated[Path | None, typer.Option("--output", help="Output directory.")] = None,
+    search_concurrency: Annotated[int | None, typer.Option("--search-concurrency", min=1)] = None,
+    download_concurrency: Annotated[int | None, typer.Option("--download-concurrency", min=1)] = None,
+    ollama_concurrency: Annotated[int | None, typer.Option("--ollama-concurrency", min=1)] = None,
+    ollama_model: Annotated[str | None, typer.Option("--ollama-model")] = None,
+    ollama_fallback_model: Annotated[str | None, typer.Option("--ollama-fallback-model")] = None,
+    min_confidence: Annotated[float | None, typer.Option("--min-confidence", min=0.0, max=1.0)] = None,
+    force_refresh_search: Annotated[bool | None, typer.Option("--force-refresh-search/--use-search-cache")] = None,
+    redownload: Annotated[bool | None, typer.Option("--redownload/--skip-downloaded")] = None,
     limit: Annotated[int | None, typer.Option("--limit", min=1, help="Limit songs for smoke testing.")] = None,
 ) -> None:
-    if not netease_liked:
+    config = apply_overrides(
+        load_config(config_file),
+        {
+            "netease_liked": netease_liked,
+            "cookie_file": cookie_file,
+            "output": output,
+            "search_concurrency": search_concurrency,
+            "download_concurrency": download_concurrency,
+            "ollama_concurrency": ollama_concurrency,
+            "ollama_model": ollama_model,
+            "ollama_fallback_model": ollama_fallback_model,
+            "min_confidence": min_confidence,
+            "force_refresh_search": force_refresh_search,
+            "redownload": redownload,
+            "limit": limit,
+        },
+    )
+    if not config.netease_liked:
         raise typer.BadParameter("Only --netease-liked is supported in the first version.")
     asyncio.run(
         run_sync(
-            cookie_file=cookie_file,
-            output=output,
-            search_concurrency=search_concurrency,
-            download_concurrency=download_concurrency,
-            ollama_concurrency=ollama_concurrency,
-            ollama_model=ollama_model,
-            ollama_fallback_model=ollama_fallback_model,
-            min_confidence=min_confidence,
-            force_refresh_search=force_refresh_search,
-            redownload=redownload,
-            limit=limit,
+            cookie_file=config.cookie_file,
+            output=config.output,
+            search_concurrency=config.search_concurrency,
+            download_concurrency=config.download_concurrency,
+            ollama_concurrency=config.ollama_concurrency,
+            ollama_model=config.ollama_model,
+            ollama_fallback_model=config.ollama_fallback_model,
+            min_confidence=config.min_confidence,
+            force_refresh_search=config.force_refresh_search,
+            redownload=config.redownload,
+            limit=config.limit,
         )
     )
 

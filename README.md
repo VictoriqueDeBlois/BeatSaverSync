@@ -31,11 +31,38 @@ ollama pull qwen3.6:27b
 
 ## 运行
 
+默认参数都在 `config.json` 里，日常直接运行：
+
 ```powershell
-uv run beatsaver-sync --netease-liked --cookie-file .secrets/netease.cookie
+uv run beatsaver-sync
 ```
 
-常用参数：
+如果要使用其他配置文件：
+
+```powershell
+uv run beatsaver-sync --config config.json
+```
+
+`config.json` 示例：
+
+```json
+{
+  "netease_liked": true,
+  "cookie_file": ".secrets/netease.cookie",
+  "output": "output",
+  "search_concurrency": 5,
+  "download_concurrency": 3,
+  "ollama_concurrency": 1,
+  "ollama_model": "qwen3.6:27b",
+  "ollama_fallback_model": "qwen3.5:35b",
+  "min_confidence": 0.72,
+  "force_refresh_search": false,
+  "redownload": false,
+  "limit": null
+}
+```
+
+命令行参数仍然可以临时覆盖配置：
 
 ```powershell
 uv run beatsaver-sync `
@@ -51,7 +78,7 @@ uv run beatsaver-sync `
 如果想先小范围试跑：
 
 ```powershell
-uv run beatsaver-sync --cookie-file .secrets/netease.cookie --limit 10
+uv run beatsaver-sync --limit 10
 ```
 
 ## 输出

@@ -1,0 +1,14 @@
+{
+  "netease_liked": true,
+  "cookie_file": ".secrets/netease.cookie",
+  "output": "output",
+  "search_concurrency": 5,
+  "download_concurrency": 3,
+  "ollama_concurrency": 1,
+  "ollama_model": "qwen3.6:27b",
+  "ollama_fallback_model": "qwen3.5:35b",
+  "min_confidence": 0.72,
+  "force_refresh_search": false,
+  "redownload": false,
+  "limit": null
+}
