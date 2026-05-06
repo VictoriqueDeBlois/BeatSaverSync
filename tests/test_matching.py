@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from beatsaver_sync.matching import build_queries, score_candidate, split_title_queries
+from beatsaver_sync.matching import build_queries, dedupe_queries, score_candidate, split_title_queries
 from beatsaver_sync.models import Artist, BeatSaverDifficulty, BeatSaverMap, BeatSaverVersion, NeteaseSong
 
 
@@ -32,7 +32,7 @@ def test_build_queries_removes_common_noise() -> None:
 
     queries = build_queries(song)
 
-    assert queries[0] == "all alone with you"
+    assert queries[0] == "All Alone With You (TV Size) [Psycho-Pass ED2]"
     assert "all alone with you" in queries
     assert all("EGOIST" not in query for query in queries)
 
@@ -50,6 +50,16 @@ def test_split_title_queries_handles_multilingual_title() -> None:
 
     assert "白夜洇润" in queries
     assert "unfurling night" in queries
+
+
+def test_build_queries_dedupes_case_only_variants() -> None:
+    song = NeteaseSong(id=1, name="PROVANT", artists=[Artist(name="SawanoHiroyuki[nZk]")])
+
+    assert build_queries(song) == ["PROVANT"]
+
+
+def test_dedupe_queries_is_case_insensitive() -> None:
+    assert dedupe_queries(["A cup of coffee", "a cup of coffee", "  A  cup  of coffee  "]) == ["A cup of coffee"]
 
 
 def test_score_prefers_correct_artist_over_more_playable_wrong_song() -> None:

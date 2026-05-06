@@ -51,14 +51,14 @@ def build_queries(song: NeteaseSong, include_artists: bool = False) -> list[str]
     clean_title = normalize_text(strip_parenthetical(title)) or normalize_text(title)
     artists = song.artist_names[:3]
     queries: list[str] = []
+    if title:
+        queries.append(title)
+    queries.append(clean_title)
     queries.extend(split_title_queries(clean_title))
     if include_artists:
         for artist in artists[:2]:
             queries.append(f"{clean_title} {artist}".strip())
-    queries.append(clean_title)
-    if title and title != clean_title:
-        queries.append(title)
-    return list(dict.fromkeys(query for query in queries if query))
+    return dedupe_queries(queries)
 
 
 def split_title_queries(clean_title: str) -> list[str]:
@@ -71,6 +71,18 @@ def split_title_queries(clean_title: str) -> list[str]:
         if len(normalized) >= 2:
             queries.append(normalized)
     return queries
+
+
+def dedupe_queries(queries: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for query in queries:
+        normalized = re.sub(r"\s+", " ", query).strip()
+        key = normalized.casefold()
+        if normalized and key not in seen:
+            deduped.append(normalized)
+            seen.add(key)
+    return deduped
 
 
 def difficulty_bonus(item: BeatSaverMap) -> float:
