@@ -1,0 +1,7 @@
+.venv/
+.idea/
+.secrets/
+output/
+*.pyc
+__pycache__/
+.pytest_cache/
