@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from beatsaver_sync.matching import build_queries, dedupe_queries, score_candidate, split_title_queries
+import pytest
+
+from beatsaver_sync.matching import Matcher, build_queries, dedupe_queries, score_candidate, split_title_queries
 from beatsaver_sync.models import Artist, BeatSaverDifficulty, BeatSaverMap, BeatSaverVersion, NeteaseSong
 
 
@@ -83,3 +85,45 @@ def test_score_rewards_low_difficulty_when_song_matches() -> None:
     many_difficulties = make_map("b", "All Alone With You", "EGOIST", ["Easy", "Normal", "Hard", "Expert"])
 
     assert score_candidate(song, many_difficulties).score > score_candidate(song, expert_plus_only).score
+
+
+class FakeBeatSaver:
+    def __init__(self, results: list[BeatSaverMap]) -> None:
+        self.results = results
+
+    async def search(self, query: str) -> list[BeatSaverMap]:
+        return self.results
+
+
+class FakeJudge:
+    def __init__(self, selected_id: str, confidence: float = 0.95) -> None:
+        self.selected_id = selected_id
+        self.confidence = confidence
+
+    async def judge(self, song: NeteaseSong, candidates: list[BeatSaverMap]) -> tuple[str | None, float, str]:
+        return self.selected_id, self.confidence, "test judgment"
+
+
+@pytest.mark.asyncio
+async def test_llm_selection_must_pass_artist_gate() -> None:
+    song = NeteaseSong(id=1, name="白夜洇润 Unfurling Night", artists=[Artist(name="HOYO-MiX")])
+    wrong = make_map("wrong", "Byakuya gentou", "Nekomata Master", ["Easy", "Normal", "Expert"])
+    matcher = Matcher(FakeBeatSaver([wrong]), FakeJudge("wrong"), min_confidence=0.72, llm_threshold=1.0)
+
+    result = await matcher.match_song(song)
+
+    assert result.status == "low_confidence"
+    assert result.selected is None
+    assert "failed the local artist/title gate" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_llm_selection_accepts_artist_alias_case() -> None:
+    song = NeteaseSong(id=1, name="どうかしてる", artists=[Artist(name="WurtS")])
+    correct = make_map("correct", "Doukashiteru (どうかしてる)", "Wurts", ["Expert"])
+    matcher = Matcher(FakeBeatSaver([correct]), FakeJudge("correct"), min_confidence=0.72, llm_threshold=1.0)
+
+    result = await matcher.match_song(song)
+
+    assert result.status == "matched"
+    assert result.selected == correct

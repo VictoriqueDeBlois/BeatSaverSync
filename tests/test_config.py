@@ -10,6 +10,8 @@ def test_load_config_defaults_when_missing(tmp_path: Path) -> None:
 
     assert config.cookie_file == Path(".secrets/netease.cookie")
     assert config.search_with_artists is False
+    assert config.require_artist_match is True
+    assert config.min_artist_confidence == 0.45
     assert config.search_concurrency == 5
     assert config.search_retries == 3
     assert config.console_logging is False
@@ -25,6 +27,8 @@ def test_load_config_from_json(tmp_path: Path) -> None:
           "cookie_file": ".secrets/custom.cookie",
           "output": "custom-output",
           "search_with_artists": true,
+          "require_artist_match": false,
+          "min_artist_confidence": 0.6,
           "search_concurrency": 9,
           "search_retries": 4,
           "console_logging": true,
@@ -40,6 +44,8 @@ def test_load_config_from_json(tmp_path: Path) -> None:
     assert config.cookie_file == Path(".secrets/custom.cookie")
     assert config.output == Path("custom-output")
     assert config.search_with_artists is True
+    assert config.require_artist_match is False
+    assert config.min_artist_confidence == 0.6
     assert config.search_concurrency == 9
     assert config.search_retries == 4
     assert config.console_logging is True

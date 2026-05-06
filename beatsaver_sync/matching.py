@@ -29,6 +29,9 @@ class CandidateScore:
     map: BeatSaverMap
     score: float
     reason: str
+    title_score: float = 0.0
+    full_title_score: float = 0.0
+    artist_score: float = 0.0
 
 
 def normalize_text(value: str) -> str:
@@ -113,7 +116,14 @@ def score_candidate(song: NeteaseSong, item: BeatSaverMap) -> CandidateScore:
         score = min(score, 0.68)
     score = max(0.0, min(score, 1.0))
     reason = f"title={title_score:.2f}, full_title={full_title_score:.2f}, artist={artist_score:.2f}"
-    return CandidateScore(item, score, reason)
+    return CandidateScore(
+        item,
+        score,
+        reason,
+        title_score=title_score,
+        full_title_score=full_title_score,
+        artist_score=artist_score,
+    )
 
 
 class Matcher:
@@ -125,6 +135,8 @@ class Matcher:
         llm_margin: float = 0.08,
         llm_threshold: float = 0.82,
         search_with_artists: bool = False,
+        require_artist_match: bool = True,
+        min_artist_confidence: float = 0.45,
         ollama_concurrency: int = 1,
     ) -> None:
         self.beatsaver = beatsaver
@@ -133,6 +145,8 @@ class Matcher:
         self.llm_margin = llm_margin
         self.llm_threshold = llm_threshold
         self.search_with_artists = search_with_artists
+        self.require_artist_match = require_artist_match
+        self.min_artist_confidence = min_artist_confidence
         self.ollama_sem = asyncio.Semaphore(max(1, ollama_concurrency))
 
     async def match_song(self, song: NeteaseSong) -> MatchResult:
@@ -167,6 +181,20 @@ class Matcher:
                 selected_id, confidence, reason = await self.judge.judge(song, [item.map for item in scored[:8]])
             if selected_id and selected_id in seen:
                 selected = seen[selected_id]
+                selected_score = score_candidate(song, selected)
+                if not self._accept_llm_selection(song, selected_score):
+                    return MatchResult(
+                        song=song,
+                        status="low_confidence",
+                        confidence=min(confidence, selected_score.score),
+                        queries=queries,
+                        reason=(
+                            "Ollama selected a candidate but it failed the local artist/title gate: "
+                            f"{selected_score.reason}; Ollama reason: {reason}"
+                        ),
+                        candidates=[item.map for item in scored[:8]],
+                        llm_used=True,
+                    )
                 version = selected.latest_version
                 status = "matched" if confidence >= self.min_confidence else "low_confidence"
                 return MatchResult(
@@ -211,3 +239,9 @@ class Matcher:
         if len(scored) > 1 and scored[0].score - scored[1].score < self.llm_margin:
             return True
         return False
+
+    def _accept_llm_selection(self, song: NeteaseSong, score: CandidateScore) -> bool:
+        title_ok = max(score.title_score, score.full_title_score) >= 0.6
+        if not song.artist_names or not self.require_artist_match:
+            return title_ok
+        return title_ok and score.artist_score >= self.min_artist_confidence

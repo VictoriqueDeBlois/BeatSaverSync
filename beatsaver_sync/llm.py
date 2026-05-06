@@ -132,6 +132,10 @@ class OllamaJudge:
             '{"selected_id": string|null, "confidence": number, "reason": string}. '
             "Pick the BeatSaver candidate that is the same song as the NetEase song. "
             "Title and artist correctness are more important than popularity or difficulty. "
+            "A candidate is not reliable when it only shares one short word, one CJK character group, "
+            "or a generic subtitle phrase with the NetEase title. "
+            "When the NetEase song has an artist, require the candidate artist to be the same artist, "
+            "a known alias, or a clearly documented original/cover relationship. "
             "Accept multilingual title variants, translations, romanization, anime/game subtitles, TV size/full markers, "
             "and common artist aliases. Reject unrelated songs, covers by unrelated artists, and title-only coincidences. "
             "Use selected_id=null when no candidate is a reliable match. Keep reason short. "

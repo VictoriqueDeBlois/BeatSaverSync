@@ -32,12 +32,16 @@ def test_match_cache_namespace_changes_with_matching_config() -> None:
     one = build_match_cache_namespace(
         min_confidence=0.72,
         search_with_artists=False,
+        require_artist_match=True,
+        min_artist_confidence=0.45,
         ollama_model="qwen3.6:27b",
         ollama_fallback_model=None,
     )
     two = build_match_cache_namespace(
         min_confidence=0.8,
         search_with_artists=False,
+        require_artist_match=True,
+        min_artist_confidence=0.45,
         ollama_model="qwen3.6:27b",
         ollama_fallback_model=None,
     )

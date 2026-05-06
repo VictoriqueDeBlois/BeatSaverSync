@@ -16,7 +16,7 @@ uv sync
 ollama pull qwen3.6:27b
 ```
 
-如果默认模型不可用，工具会回退到 `qwen3.5:35b`。
+默认不启用备用模型，避免显卡在两个模型之间切换。如果你想用更轻的模型，可以在 `config.json` 里把 `ollama_model` 改成已经拉取的模型，例如 `granite4.1:8b`。
 
 ## 网易云 Cookie
 
@@ -51,6 +51,8 @@ uv run beatsaver-sync --config config.json
   "cookie_file": ".secrets/netease.cookie",
   "output": "output",
   "search_with_artists": false,
+  "require_artist_match": true,
+  "min_artist_confidence": 0.45,
   "search_concurrency": 5,
   "search_retries": 3,
   "download_concurrency": 3,
@@ -101,6 +103,14 @@ uv run beatsaver-sync --limit 10
 `search_with_artists`
 
 搜索 BeatSaver 时是否把歌手名拼进关键词。默认 `false`，只用歌名和拆分后的标题片段搜索，例如 `白夜洇润 Unfurling Night` 会生成 `白夜洇润 unfurling night`、`白夜洇润`、`unfurling night` 等关键词。一般不建议打开，因为 BeatSaver 标题里经常没有网易云歌手名；是否歌手匹配会在候选评分和 LLM 判断阶段处理。
+
+`require_artist_match`
+
+LLM 选中的候选是否必须通过本地歌手校验。默认 `true`。这个开关用来防止 `等吧`、`またね` 这类短标题只因为候选标题里碰巧出现相同字词就被下载。搜索阶段仍然可以只搜歌名，但最终下载前会检查 BeatSaver 的 `songAuthorName` 是否和网易云歌手足够接近。
+
+`min_artist_confidence`
+
+歌手校验的最低相似度，范围是 `0.0` 到 `1.0`，默认 `0.45`。调高会更保守，能减少错下不同歌手的同名/近名歌曲；调低会允许更多歌手别名、大小写差异和罗马音差异。通常建议保持默认。
 
 `search_concurrency`
 
