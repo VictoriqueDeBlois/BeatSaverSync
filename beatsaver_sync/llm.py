@@ -28,12 +28,16 @@ class OllamaJudge:
         model: str = "qwen3.6:27b",
         fallback_model: str | None = None,
         base_url: str = "http://127.0.0.1:11434",
-        timeout: float = 120.0,
+        timeout: float = 240.0,
+        num_predict: int = 160,
+        num_ctx: int = 2048,
     ) -> None:
         self.model = model
         self.fallback_model = fallback_model
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.num_predict = num_predict
+        self.num_ctx = num_ctx
 
     async def judge(self, song: NeteaseSong, candidates: list[BeatSaverMap]) -> tuple[str | None, float, str]:
         if not candidates:
@@ -77,13 +81,21 @@ class OllamaJudge:
             "prompt": prompt,
             "stream": False,
             "format": "json",
-            "options": {"temperature": 0.0},
+            "think": False,
+            "options": {"temperature": 0.0, "num_predict": self.num_predict, "num_ctx": self.num_ctx},
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(f"{self.base_url}/api/generate", json=payload)
             response.raise_for_status()
             data = response.json()
-        return str(data.get("response", ""))
+        model_response = str(data.get("response") or "").strip()
+        if model_response:
+            return model_response
+        thinking = str(data.get("thinking") or "").strip()
+        if thinking:
+            LOGGER.warning("Ollama model %s returned JSON in thinking field; parsing it as a fallback.", model)
+            return thinking
+        raise OllamaResponseError(f"Ollama model {model} returned empty response.")
 
     def _parse(self, response: str) -> tuple[str | None, float, str]:
         cleaned = response.strip()
@@ -116,10 +128,13 @@ class OllamaJudge:
             for item in candidates
         ]
         return (
-            "You select the BeatSaver map that best matches a NetEase Cloud Music song. "
-            "Consider multilingual title variants, translations, romanization, artist aliases, TV size/remix/live markers, "
-            "and reject unrelated songs. Prefer correct song and artist over popularity or difficulty. "
-            "Return JSON only with keys selected_id, confidence, reason. "
-            f"NetEase song: {json.dumps({'title': song.name, 'artists': song.artist_names}, ensure_ascii=False)}\n"
-            f"BeatSaver candidates: {json.dumps(candidate_lines, ensure_ascii=False)}"
+            "Return one JSON object only. Schema: "
+            '{"selected_id": string|null, "confidence": number, "reason": string}. '
+            "Pick the BeatSaver candidate that is the same song as the NetEase song. "
+            "Title and artist correctness are more important than popularity or difficulty. "
+            "Accept multilingual title variants, translations, romanization, anime/game subtitles, TV size/full markers, "
+            "and common artist aliases. Reject unrelated songs, covers by unrelated artists, and title-only coincidences. "
+            "Use selected_id=null when no candidate is a reliable match. Keep reason short. "
+            f"Song={json.dumps({'title': song.name, 'artists': song.artist_names}, ensure_ascii=False)} "
+            f"Candidates={json.dumps(candidate_lines, ensure_ascii=False)}"
         )
