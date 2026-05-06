@@ -192,7 +192,7 @@ async def download_all(matches: list[MatchResult], downloader: DownloadManager, 
             if task_id is None:
                 task_id = progress.add_task(version_hash[:10], total=total)
                 task_by_hash[version_hash] = task_id
-            if total and progress.tasks[task_id].total != total:
+            if total:
                 progress.update(task_id, total=total)
             progress.update(task_id, completed=completed)
 

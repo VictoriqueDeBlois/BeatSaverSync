@@ -56,7 +56,10 @@ class DownloadManager:
 
     def target_path(self, match: MatchResult) -> Path:
         assert match.selected and match.selected_version
-        name = safe_filename(f"{match.selected.song_author_name} - {match.selected.song_name} [{match.selected.id}]")
+        version_hash = match.selected_version.hash[:8]
+        name = safe_filename(
+            f"{match.selected.song_author_name} - {match.selected.song_name} [{match.selected.id}-{version_hash}]"
+        )
         return self.downloads_dir / f"{name}.zip"
 
     async def download(self, match: MatchResult, progress: ProgressCallback | None = None) -> DownloadResult:
