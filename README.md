@@ -193,6 +193,18 @@ flowchart TD
     L --> U["写入报告，可用 review-low-confidence 导出人工审核表"]
 ```
 
+## 音频源接口
+
+项目里已经预留了音频源抽象，后续音频相似度比较不会绑死网易云：
+
+- `SourceSong`：统一歌曲模型，包含来源、来源 ID、标题、歌手、专辑、时长，以及可选本地音频路径或 URL。
+- `AudioReference`：统一音频引用，可以是 `url`、`file` 或 `bytes`。
+- `AudioSource`：音频源接口，负责把任意来源的歌曲转换成可比较的音频引用。
+- `NeteaseAudioSource`：使用当前网易云 cookie 调 `api/song/enhance/player/url` 获取歌曲播放 URL。
+- `LocalFileAudioSource`：面向后续 foobar2000 或本地曲库，直接返回本地文件路径。
+
+后面做 10 秒 BeatSaver `previewURL` 相似度时，会只依赖 `AudioSource`，所以可以把网易云、foobar2000、本地文件放在同一套比较流程里。
+
 ## 输出
 
 - `output/downloads/*.zip`：下载好的 BeatSaver 谱面 zip。

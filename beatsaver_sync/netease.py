@@ -118,6 +118,22 @@ class NeteaseClient:
             songs.extend(self._parse_song(song) for song in batch_songs if song.get("id"))
         return songs
 
+    async def get_song_audio_url(self, song_id: int, bitrate: int = 320000) -> str | None:
+        url = "https://music.163.com/api/song/enhance/player/url"
+        params = {"ids": json.dumps([song_id], separators=(",", ":")), "br": bitrate}
+        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+            data = await self._get_json_with_params(client, url, params)
+        entries = data.get("data") or []
+        if not entries:
+            LOGGER.warning("NetEase audio URL response contained no data for song %s.", song_id)
+            return None
+        entry = entries[0] or {}
+        audio_url = entry.get("url")
+        if not audio_url:
+            LOGGER.warning("NetEase audio URL unavailable for song %s: %s", song_id, entry.get("msg") or entry.get("code"))
+            return None
+        return str(audio_url)
+
     def _parse_song(self, raw: dict) -> NeteaseSong:
         artists_raw = raw.get("ar") or raw.get("artists") or []
         artists = [Artist(id=artist.get("id"), name=artist.get("name", "")) for artist in artists_raw if artist.get("name")]
@@ -129,6 +145,14 @@ class NeteaseClient:
             album=album.get("name") if isinstance(album, dict) else None,
             duration_ms=raw.get("dt") or raw.get("duration"),
         )
+
+    async def _get_json_with_params(self, client: httpx.AsyncClient, url: str, params: dict) -> dict:
+        response = await client.get(url, headers=self.headers, params=params)
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise NeteaseError(f"Unexpected NetEase response from {url}")
+        return data
 
 
 def extract_track_ids(playlist: dict) -> list[int]:
