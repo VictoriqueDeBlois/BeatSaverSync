@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from beatsaver_sync.matching import Matcher, build_queries, dedupe_queries, score_candidate, split_title_queries
+from beatsaver_sync.matching import (
+    Matcher,
+    build_queries,
+    dedupe_queries,
+    score_candidate,
+    split_title_queries,
+    title_needs_query_expansion,
+)
 from beatsaver_sync.models import Artist, BeatSaverDifficulty, BeatSaverMap, BeatSaverVersion, NeteaseSong
 
 
@@ -88,20 +95,40 @@ def test_score_rewards_low_difficulty_when_song_matches() -> None:
 
 
 class FakeBeatSaver:
-    def __init__(self, results: list[BeatSaverMap]) -> None:
+    def __init__(self, results: list[BeatSaverMap] | dict[str, list[BeatSaverMap]]) -> None:
         self.results = results
+        self.queries: list[str] = []
 
     async def search(self, query: str) -> list[BeatSaverMap]:
+        self.queries.append(query)
+        if isinstance(self.results, dict):
+            return self.results.get(query, [])
         return self.results
 
 
 class FakeJudge:
-    def __init__(self, selected_id: str, confidence: float = 0.95) -> None:
+    def __init__(
+        self,
+        selected_id: str,
+        confidence: float = 0.95,
+        reason: str = "test judgment",
+        search_queries: list[str] | None = None,
+    ) -> None:
         self.selected_id = selected_id
         self.confidence = confidence
+        self.reason = reason
+        self.search_queries = search_queries or []
 
     async def judge(self, song: NeteaseSong, candidates: list[BeatSaverMap]) -> tuple[str | None, float, str]:
-        return self.selected_id, self.confidence, "test judgment"
+        return self.selected_id, self.confidence, self.reason
+
+    async def suggest_search_queries(self, song: NeteaseSong) -> list[str]:
+        return self.search_queries
+
+
+def test_title_needs_query_expansion_only_for_non_ascii() -> None:
+    assert title_needs_query_expansion("恋愛裁判")
+    assert not title_needs_query_expansion("Love Trial")
 
 
 @pytest.mark.asyncio
@@ -127,3 +154,56 @@ async def test_llm_selection_accepts_artist_alias_case() -> None:
 
     assert result.status == "matched"
     assert result.selected == correct
+
+
+@pytest.mark.asyncio
+async def test_llm_selection_accepts_translation_when_reason_confirms_artist() -> None:
+    song = NeteaseSong(id=1, name="恋愛裁判", artists=[Artist(name="40mP"), Artist(name="初音ミク")])
+    correct = make_map("correct", "Love Trial", "40mP", ["Expert"])
+    judge = FakeJudge(
+        "correct",
+        confidence=0.95,
+        reason="The title is a direct English translation of 恋愛裁判 and the artist matches exactly: 40mP.",
+    )
+    matcher = Matcher(FakeBeatSaver([correct]), judge, min_confidence=0.72, llm_threshold=1.0)
+
+    result = await matcher.match_song(song)
+
+    assert result.status == "matched"
+    assert result.selected == correct
+
+
+@pytest.mark.asyncio
+async def test_llm_selection_still_rejects_title_only_coincidence() -> None:
+    song = NeteaseSong(id=1, name="白夜洇润 Unfurling Night", artists=[Artist(name="HOYO-MiX")])
+    wrong = make_map("wrong", "Byakuya gentou", "Nekomata Master", ["Expert"])
+    judge = FakeJudge(
+        "wrong",
+        confidence=0.95,
+        reason="Title contains Byakuya and artist name matches Nekomata Master.",
+    )
+    matcher = Matcher(FakeBeatSaver([wrong]), judge, min_confidence=0.72, llm_threshold=1.0)
+
+    result = await matcher.match_song(song)
+
+    assert result.status == "low_confidence"
+    assert result.selected is None
+
+
+@pytest.mark.asyncio
+async def test_matcher_uses_llm_search_expansion_after_empty_search() -> None:
+    song = NeteaseSong(id=1, name="恋愛裁判", artists=[Artist(name="40mP")])
+    correct = make_map("correct", "Love Trial", "40mP", ["Expert"])
+    beatsaver = FakeBeatSaver({"恋愛裁判": [], "Love Trial": [correct]})
+    judge = FakeJudge(
+        "correct",
+        reason="The title is a direct English translation and the artist matches exactly: 40mP.",
+        search_queries=["Love Trial"],
+    )
+    matcher = Matcher(beatsaver, judge, min_confidence=0.72, llm_threshold=1.0)
+
+    result = await matcher.match_song(song)
+
+    assert result.status == "matched"
+    assert "Love Trial" in result.queries
+    assert beatsaver.queries == ["恋愛裁判", "Love Trial"]

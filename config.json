@@ -3,6 +3,7 @@
   "cookie_file": ".secrets/netease.cookie",
   "output": "output",
   "search_with_artists": false,
+  "expand_search_with_llm": true,
   "require_artist_match": true,
   "min_artist_confidence": 0.45,
   "search_concurrency": 5,

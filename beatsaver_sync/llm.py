@@ -75,6 +75,15 @@ class OllamaJudge:
             return None, 0.0, "Ollama unavailable; fallback did not produce a valid judgment."
         return None, 0.0, "Ollama unavailable or disabled fallback did not run."
 
+    async def suggest_search_queries(self, song: NeteaseSong) -> list[str]:
+        prompt = self._query_prompt(song)
+        try:
+            result = await self._call(self.model, prompt)
+            return self._parse_queries(result)
+        except Exception as exc:  # noqa: BLE001 - query expansion is optional.
+            LOGGER.warning("Ollama search query expansion failed with %s: %s", self.model, exc)
+            return []
+
     async def _call(self, model: str, prompt: str) -> str:
         payload = {
             "model": model,
@@ -116,6 +125,27 @@ class OllamaJudge:
         reason = str(data.get("reason", ""))
         return selected_id, max(0.0, min(confidence, 1.0)), reason
 
+    def _parse_queries(self, response: str) -> list[str]:
+        cleaned = response.strip()
+        if not cleaned.startswith("{"):
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start >= 0 and end > start:
+                cleaned = cleaned[start : end + 1]
+        data = json.loads(cleaned)
+        raw_queries = data.get("queries", [])
+        if not isinstance(raw_queries, list):
+            return []
+        queries: list[str] = []
+        seen: set[str] = set()
+        for query in raw_queries:
+            normalized = " ".join(str(query).split())
+            key = normalized.casefold()
+            if 2 <= len(normalized) <= 80 and key not in seen:
+                queries.append(normalized)
+                seen.add(key)
+        return queries[:6]
+
     def _prompt(self, song: NeteaseSong, candidates: list[BeatSaverMap]) -> str:
         candidate_lines = [
             {
@@ -141,4 +171,15 @@ class OllamaJudge:
             "Use selected_id=null when no candidate is a reliable match. Keep reason short. "
             f"Song={json.dumps({'title': song.name, 'artists': song.artist_names}, ensure_ascii=False)} "
             f"Candidates={json.dumps(candidate_lines, ensure_ascii=False)}"
+        )
+
+    def _query_prompt(self, song: NeteaseSong) -> str:
+        return (
+            "Return one JSON object only. Schema: "
+            '{"queries": string[]}. '
+            "Create BeatSaver search queries for this song when the original title may be Japanese, Chinese, "
+            "Korean, romanized, or translated on BeatSaver. Include likely romanization and English title variants. "
+            "Do not include artist names unless they are part of a well-known title. "
+            "Do not invent unrelated titles. Keep each query short and searchable. "
+            f"Song={json.dumps({'title': song.name, 'artists': song.artist_names}, ensure_ascii=False)}"
         )

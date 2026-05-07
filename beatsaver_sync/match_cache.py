@@ -66,15 +66,17 @@ def build_match_cache_namespace(
     *,
     min_confidence: float,
     search_with_artists: bool,
+    expand_search_with_llm: bool,
     require_artist_match: bool,
     min_artist_confidence: float,
     ollama_model: str,
     ollama_fallback_model: str | None,
 ) -> str:
     payload = {
-        "version": 2,
+        "version": 3,
         "min_confidence": min_confidence,
         "search_with_artists": search_with_artists,
+        "expand_search_with_llm": expand_search_with_llm,
         "require_artist_match": require_artist_match,
         "min_artist_confidence": min_artist_confidence,
         "ollama_model": ollama_model,

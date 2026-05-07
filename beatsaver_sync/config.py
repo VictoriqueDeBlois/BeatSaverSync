@@ -15,6 +15,7 @@ class SyncConfig(BaseModel):
     cookie_file: Path = Path(".secrets/netease.cookie")
     output: Path = Path("output")
     search_with_artists: bool = False
+    expand_search_with_llm: bool = True
     require_artist_match: bool = True
     min_artist_confidence: float = Field(default=0.45, ge=0.0, le=1.0)
     search_concurrency: int = Field(default=5, ge=1)

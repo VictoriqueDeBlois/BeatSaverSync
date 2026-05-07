@@ -51,6 +51,7 @@ uv run beatsaver-sync --config config.json
   "cookie_file": ".secrets/netease.cookie",
   "output": "output",
   "search_with_artists": false,
+  "expand_search_with_llm": true,
   "require_artist_match": true,
   "min_artist_confidence": 0.45,
   "search_concurrency": 5,
@@ -104,9 +105,13 @@ uv run beatsaver-sync --limit 10
 
 搜索 BeatSaver 时是否把歌手名拼进关键词。默认 `false`，只用歌名和拆分后的标题片段搜索，例如 `白夜洇润 Unfurling Night` 会生成 `白夜洇润 unfurling night`、`白夜洇润`、`unfurling night` 等关键词。一般不建议打开，因为 BeatSaver 标题里经常没有网易云歌手名；是否歌手匹配会在候选评分和 LLM 判断阶段处理。
 
+`expand_search_with_llm`
+
+普通关键词搜不到结果时，是否让 Ollama 生成罗马音、英文译名等搜索词再搜一轮。默认 `true`。例如日文 `恋愛裁判` 可能扩展出 `Love Trial` 或 `Renai Saiban`，中文/日文标题也可能扩展出英文翻译。这个步骤只在普通搜索没有结果、且标题包含非 ASCII 字符时触发，用来提高召回，不会替代后续匹配判断。
+
 `require_artist_match`
 
-LLM 选中的候选是否必须通过本地歌手校验。默认 `true`。这个开关用来防止 `等吧`、`またね` 这类短标题只因为候选标题里碰巧出现相同字词就被下载。搜索阶段仍然可以只搜歌名，但最终下载前会检查 BeatSaver 的 `songAuthorName` 是否和网易云歌手足够接近。
+LLM 选中的候选是否必须通过歌手校验。默认 `true`。这个开关用来防止 `等吧`、`またね` 这类短标题只因为候选标题里碰巧出现相同字词就被下载。搜索阶段仍然可以只搜歌名，但最终下载前会检查 BeatSaver 的 `songAuthorName` 是否和网易云歌手足够接近；如果 LLM 高置信说明标题是罗马音或翻译等价，并且理由里明确说明歌手是同一人或别名，也可以通过。
 
 `min_artist_confidence`
 

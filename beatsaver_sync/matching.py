@@ -22,6 +22,19 @@ NOISE_PATTERNS = [
 ]
 
 LOW_DIFFICULTIES = {"Easy", "Normal", "Hard"}
+LLM_EQUIVALENCE_TERMS = (
+    "romanization",
+    "romanized",
+    "romaji",
+    "transliteration",
+    "transliterated",
+    "translation",
+    "translated",
+    "direct english",
+    "english title",
+    "equivalent",
+)
+LLM_ARTIST_TERMS = ("artist matches", "artist match", "same artist", "matches exactly", "exactly matches")
 
 
 @dataclass(frozen=True)
@@ -62,6 +75,10 @@ def build_queries(song: NeteaseSong, include_artists: bool = False) -> list[str]
         for artist in artists[:2]:
             queries.append(f"{clean_title} {artist}".strip())
     return dedupe_queries(queries)
+
+
+def title_needs_query_expansion(title: str) -> bool:
+    return bool(re.search(r"[^\x00-\x7f]", title))
 
 
 def split_title_queries(clean_title: str) -> list[str]:
@@ -135,6 +152,7 @@ class Matcher:
         llm_margin: float = 0.08,
         llm_threshold: float = 0.82,
         search_with_artists: bool = False,
+        expand_search_with_llm: bool = True,
         require_artist_match: bool = True,
         min_artist_confidence: float = 0.45,
         ollama_concurrency: int = 1,
@@ -145,6 +163,7 @@ class Matcher:
         self.llm_margin = llm_margin
         self.llm_threshold = llm_threshold
         self.search_with_artists = search_with_artists
+        self.expand_search_with_llm = expand_search_with_llm
         self.require_artist_match = require_artist_match
         self.min_artist_confidence = min_artist_confidence
         self.ollama_sem = asyncio.Semaphore(max(1, ollama_concurrency))
@@ -154,14 +173,15 @@ class Matcher:
         LOGGER.info("Search queries for %s - %s: %s", song.name, ", ".join(song.artist_names), queries)
         seen: dict[str, BeatSaverMap] = {}
         search_errors: list[str] = []
-        for query in queries:
-            try:
-                LOGGER.info("BeatSaver search query for %s: %r", song.name, query)
-                for item in await self.beatsaver.search(query):
-                    seen.setdefault(item.id, item)
-            except Exception as exc:  # noqa: BLE001
-                LOGGER.warning("BeatSaver search failed for %s with query %r: %s", song.name, query, exc)
-                search_errors.append(f"{query}: {exc}")
+        search_errors.extend(await self._search_queries(song, queries, seen))
+        if not seen and self.expand_search_with_llm and title_needs_query_expansion(song.name):
+            async with self.ollama_sem:
+                expanded_queries = await self.judge.suggest_search_queries(song)
+            expanded_queries = [query for query in dedupe_queries(expanded_queries) if query.casefold() not in {q.casefold() for q in queries}]
+            if expanded_queries:
+                LOGGER.info("Ollama expanded search queries for %s: %s", song.name, expanded_queries)
+                queries = dedupe_queries([*queries, *expanded_queries])
+                search_errors.extend(await self._search_queries(song, expanded_queries, seen))
         candidates = list(seen.values())
         if not candidates:
             if search_errors:
@@ -182,7 +202,7 @@ class Matcher:
             if selected_id and selected_id in seen:
                 selected = seen[selected_id]
                 selected_score = score_candidate(song, selected)
-                if not self._accept_llm_selection(song, selected_score):
+                if not self._accept_llm_selection(song, selected_score, confidence, reason):
                     return MatchResult(
                         song=song,
                         status="low_confidence",
@@ -240,8 +260,55 @@ class Matcher:
             return True
         return False
 
-    def _accept_llm_selection(self, song: NeteaseSong, score: CandidateScore) -> bool:
+    async def _search_queries(
+        self,
+        song: NeteaseSong,
+        queries: list[str],
+        seen: dict[str, BeatSaverMap],
+    ) -> list[str]:
+        search_errors: list[str] = []
+        for query in queries:
+            try:
+                LOGGER.info("BeatSaver search query for %s: %r", song.name, query)
+                for item in await self.beatsaver.search(query):
+                    seen.setdefault(item.id, item)
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("BeatSaver search failed for %s with query %r: %s", song.name, query, exc)
+                search_errors.append(f"{query}: {exc}")
+        return search_errors
+
+    def _accept_llm_selection(self, song: NeteaseSong, score: CandidateScore, confidence: float, reason: str) -> bool:
         title_ok = max(score.title_score, score.full_title_score) >= 0.6
+        if not title_ok and self._accept_llm_title_equivalence(song, score, confidence, reason):
+            title_ok = True
         if not song.artist_names or not self.require_artist_match:
             return title_ok
-        return title_ok and score.artist_score >= self.min_artist_confidence
+        artist_ok = score.artist_score >= self.min_artist_confidence or self._reason_mentions_artist_match(
+            song,
+            score.map,
+            normalize_text(reason),
+        )
+        return title_ok and artist_ok
+
+    def _accept_llm_title_equivalence(
+        self,
+        song: NeteaseSong,
+        score: CandidateScore,
+        confidence: float,
+        reason: str,
+    ) -> bool:
+        reason_norm = normalize_text(reason)
+        if confidence < max(self.min_confidence, 0.9):
+            return False
+        if not any(term in reason_norm for term in LLM_EQUIVALENCE_TERMS):
+            return False
+        if max(score.title_score, score.full_title_score) >= 0.45:
+            return True
+        return score.artist_score >= self.min_artist_confidence or self._reason_mentions_artist_match(song, score.map, reason_norm)
+
+    def _reason_mentions_artist_match(self, song: NeteaseSong, item: BeatSaverMap, reason_norm: str) -> bool:
+        if not any(term in reason_norm for term in LLM_ARTIST_TERMS):
+            return False
+        names = [*song.artist_names, item.song_author_name]
+        normalized_names = [normalize_text(name) for name in names if len(normalize_text(name)) >= 3]
+        return any(name and name in reason_norm for name in normalized_names)

@@ -17,6 +17,14 @@ def test_parse_ollama_json_with_thinking_text() -> None:
     assert reason == "same song"
 
 
+def test_parse_search_queries_dedupes_and_limits() -> None:
+    judge = OllamaJudge()
+
+    queries = judge._parse_queries('{"queries":["Love Trial"," love   trial ","Renai Saiban","x","A very searchable title"]}')
+
+    assert queries == ["Love Trial", "Renai Saiban", "A very searchable title"]
+
+
 @pytest.mark.asyncio
 async def test_call_uses_response_field(monkeypatch: pytest.MonkeyPatch) -> None:
     judge = OllamaJudge(model="primary")
