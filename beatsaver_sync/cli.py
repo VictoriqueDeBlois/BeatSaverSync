@@ -67,8 +67,9 @@ def sync_command(
     expand_search_with_llm: Annotated[
         bool | None, typer.Option("--expand-search-with-llm/--no-llm-search-expansion")
     ] = None,
-    require_artist_match: Annotated[bool | None, typer.Option("--require-artist-match/--allow-artist-mismatch")] = None,
-    min_artist_confidence: Annotated[float | None, typer.Option("--min-artist-confidence", min=0.0, max=1.0)] = None,
+    artist_match_mode: Annotated[
+        str | None, typer.Option("--artist-match-mode", help="strict, cover_aware, or ignore.")
+    ] = None,
     search_concurrency: Annotated[int | None, typer.Option("--search-concurrency", min=1)] = None,
     search_retries: Annotated[int | None, typer.Option("--search-retries", min=1)] = None,
     download_concurrency: Annotated[int | None, typer.Option("--download-concurrency", min=1)] = None,
@@ -89,8 +90,7 @@ def sync_command(
             "output": output,
             "search_with_artists": search_with_artists,
             "expand_search_with_llm": expand_search_with_llm,
-            "require_artist_match": require_artist_match,
-            "min_artist_confidence": min_artist_confidence,
+            "artist_match_mode": artist_match_mode,
             "search_concurrency": search_concurrency,
             "search_retries": search_retries,
             "download_concurrency": download_concurrency,
@@ -112,8 +112,7 @@ def sync_command(
             output=config.output,
             search_with_artists=config.search_with_artists,
             expand_search_with_llm=config.expand_search_with_llm,
-            require_artist_match=config.require_artist_match,
-            min_artist_confidence=config.min_artist_confidence,
+            artist_match_mode=config.artist_match_mode,
             search_concurrency=config.search_concurrency,
             search_retries=config.search_retries,
             download_concurrency=config.download_concurrency,
@@ -175,8 +174,7 @@ async def run_sync(
     output: Path,
     search_with_artists: bool,
     expand_search_with_llm: bool,
-    require_artist_match: bool,
-    min_artist_confidence: float,
+    artist_match_mode: str,
     search_concurrency: int,
     search_retries: int,
     download_concurrency: int,
@@ -216,8 +214,7 @@ async def run_sync(
         min_confidence=min_confidence,
         search_with_artists=search_with_artists,
         expand_search_with_llm=expand_search_with_llm,
-        require_artist_match=require_artist_match,
-        min_artist_confidence=min_artist_confidence,
+        artist_match_mode=artist_match_mode,
         ollama_concurrency=ollama_concurrency,
     )
     match_cache = MatchCache(
@@ -226,8 +223,7 @@ async def run_sync(
             min_confidence=min_confidence,
             search_with_artists=search_with_artists,
             expand_search_with_llm=expand_search_with_llm,
-            require_artist_match=require_artist_match,
-            min_artist_confidence=min_artist_confidence,
+            artist_match_mode=artist_match_mode,
             ollama_model=ollama_model,
             ollama_fallback_model=ollama_fallback_model,
         ),

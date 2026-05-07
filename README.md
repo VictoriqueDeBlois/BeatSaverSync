@@ -52,8 +52,7 @@ uv run beatsaver-sync --config config.json
   "output": "output",
   "search_with_artists": false,
   "expand_search_with_llm": true,
-  "require_artist_match": true,
-  "min_artist_confidence": 0.45,
+  "artist_match_mode": "cover_aware",
   "search_concurrency": 5,
   "search_retries": 3,
   "download_concurrency": 3,
@@ -109,13 +108,13 @@ uv run beatsaver-sync --limit 10
 
 普通关键词搜不到结果时，是否让 Ollama 生成罗马音、英文译名等搜索词再搜一轮。默认 `true`。例如日文 `恋愛裁判` 可能扩展出 `Love Trial` 或 `Renai Saiban`，中文/日文标题也可能扩展出英文翻译。这个步骤只在普通搜索没有结果、且标题包含非 ASCII 字符时触发，用来提高召回，不会替代后续匹配判断。
 
-`require_artist_match`
+`artist_match_mode`
 
-LLM 选中的候选是否必须通过歌手校验。默认 `true`。这个开关用来防止 `等吧`、`またね` 这类短标题只因为候选标题里碰巧出现相同字词就被下载。搜索阶段仍然可以只搜歌名，但最终下载前会检查 BeatSaver 的 `songAuthorName` 是否和网易云歌手足够接近；如果 LLM 高置信说明标题是罗马音或翻译等价，并且理由里明确说明歌手是同一人或别名，也可以通过。
+歌手匹配策略。默认 `cover_aware`，适合你的歌单里有大量翻唱、原曲、罗马音和译名混在一起的情况。
 
-`min_artist_confidence`
-
-歌手校验的最低相似度，范围是 `0.0` 到 `1.0`，默认 `0.45`。调高会更保守，能减少错下不同歌手的同名/近名歌曲；调低会允许更多歌手别名、大小写差异和罗马音差异。通常建议保持默认。
+- `strict`：最保守。自动接受 LLM 候选时，BeatSaver 歌手必须和网易云歌手相似，或 LLM 明确说明歌手是同一人/别名。
+- `cover_aware`：推荐。标题强匹配或 LLM 高置信说明是罗马音、翻译、翻唱、原曲关系时，允许 BeatSaver 歌手和网易云歌手不一致；但 `Q`、`Baby`、`Stay` 这类短标题/泛标题仍需要歌手证据。
+- `ignore`：最宽松。自动接受 LLM 候选时基本不看歌手，只看标题和 LLM 判断。适合你想多下载，之后人工筛。
 
 `search_concurrency`
 
@@ -160,6 +159,39 @@ BeatSaver 搜索请求失败时的重试次数。默认 `3`。如果日志里经
 `limit`
 
 限制本次最多处理多少首歌。默认 `null`，表示处理完整红心歌单。调试时建议设成 `10` 或使用 `--limit 10`，确认 cookie、搜索、匹配和下载都正常后再跑全量。
+
+## 匹配流程
+
+```mermaid
+flowchart TD
+    A["读取网易云红心歌单"] --> B["清洗歌名并生成基础搜索词"]
+    B --> C["BeatSaver 文本搜索"]
+    C --> D{"搜索有候选?"}
+    D -- "没有，且 expand_search_with_llm=true" --> E["Ollama 生成罗马音/英文译名搜索词"]
+    E --> C
+    D -- "没有" --> F["标记 not_found"]
+    D -- "有" --> G["规则评分: 标题、完整标题、歌手、热度、难度覆盖"]
+    G --> H{"规则分足够高且领先?"}
+    H -- "是" --> I["自动匹配并进入下载队列"]
+    H -- "否" --> J["Ollama 判断候选是否同一首歌"]
+    J --> K{"Ollama 选中候选?"}
+    K -- "否" --> L["标记 low_confidence"]
+    K -- "是" --> M{"artist_match_mode"}
+    M -- "strict" --> N{"歌手相似或 LLM 明确同一歌手/别名?"}
+    M -- "cover_aware" --> O{"标题强匹配，或 LLM 高置信说明罗马音/翻译/翻唱/原曲关系?"}
+    M -- "ignore" --> P{"标题通过或 LLM 证明标题等价?"}
+    N -- "是" --> I
+    N -- "否" --> L
+    O -- "是，且不是短泛标题碰瓷" --> I
+    O -- "否" --> L
+    P -- "是" --> I
+    P -- "否" --> L
+    I --> Q["按 BeatSaver version hash 判重"]
+    Q --> R{"已下载且文件存在?"}
+    R -- "是" --> S["跳过重复下载"]
+    R -- "否" --> T["下载 zip 并更新 index.json"]
+    L --> U["写入报告，可用 review-low-confidence 导出人工审核表"]
+```
 
 ## 输出
 

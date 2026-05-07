@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass
+from typing import Literal
 
 from rapidfuzz import fuzz
 
@@ -22,6 +23,7 @@ NOISE_PATTERNS = [
 ]
 
 LOW_DIFFICULTIES = {"Easy", "Normal", "Hard"}
+MIN_ARTIST_CONFIDENCE = 0.45
 LLM_EQUIVALENCE_TERMS = (
     "romanization",
     "romanized",
@@ -35,6 +37,8 @@ LLM_EQUIVALENCE_TERMS = (
     "equivalent",
 )
 LLM_ARTIST_TERMS = ("artist matches", "artist match", "same artist", "matches exactly", "exactly matches")
+LLM_COVER_TERMS = ("cover", "covered", "original", "same song", "original artist", "original creator")
+ArtistMatchMode = Literal["strict", "cover_aware", "ignore"]
 
 
 @dataclass(frozen=True)
@@ -79,6 +83,16 @@ def build_queries(song: NeteaseSong, include_artists: bool = False) -> list[str]
 
 def title_needs_query_expansion(title: str) -> bool:
     return bool(re.search(r"[^\x00-\x7f]", title))
+
+
+def is_short_or_generic_title(title: str) -> bool:
+    normalized = normalize_text(title)
+    if re.search(r"[^\x00-\x7f]", normalized) and len(normalized) > 2:
+        return False
+    tokens = normalized.split()
+    if len(normalized) <= 3:
+        return True
+    return len(tokens) == 1 and len(tokens[0]) <= 5
 
 
 def split_title_queries(clean_title: str) -> list[str]:
@@ -153,8 +167,7 @@ class Matcher:
         llm_threshold: float = 0.82,
         search_with_artists: bool = False,
         expand_search_with_llm: bool = True,
-        require_artist_match: bool = True,
-        min_artist_confidence: float = 0.45,
+        artist_match_mode: ArtistMatchMode = "cover_aware",
         ollama_concurrency: int = 1,
     ) -> None:
         self.beatsaver = beatsaver
@@ -164,8 +177,7 @@ class Matcher:
         self.llm_threshold = llm_threshold
         self.search_with_artists = search_with_artists
         self.expand_search_with_llm = expand_search_with_llm
-        self.require_artist_match = require_artist_match
-        self.min_artist_confidence = min_artist_confidence
+        self.artist_match_mode = artist_match_mode
         self.ollama_sem = asyncio.Semaphore(max(1, ollama_concurrency))
 
     async def match_song(self, song: NeteaseSong) -> MatchResult:
@@ -278,16 +290,15 @@ class Matcher:
         return search_errors
 
     def _accept_llm_selection(self, song: NeteaseSong, score: CandidateScore, confidence: float, reason: str) -> bool:
+        reason_norm = normalize_text(reason)
         title_ok = max(score.title_score, score.full_title_score) >= 0.6
-        if not title_ok and self._accept_llm_title_equivalence(song, score, confidence, reason):
+        if not title_ok and self._accept_llm_title_equivalence(song, score, confidence, reason_norm):
             title_ok = True
-        if not song.artist_names or not self.require_artist_match:
+        if not song.artist_names or self.artist_match_mode == "ignore":
             return title_ok
-        artist_ok = score.artist_score >= self.min_artist_confidence or self._reason_mentions_artist_match(
-            song,
-            score.map,
-            normalize_text(reason),
-        )
+        artist_ok = score.artist_score >= MIN_ARTIST_CONFIDENCE or self._reason_mentions_artist_match(song, score.map, reason_norm)
+        if self.artist_match_mode == "cover_aware" and title_ok:
+            return artist_ok or self._llm_allows_cover_artist_mismatch(song, score, confidence, reason_norm)
         return title_ok and artist_ok
 
     def _accept_llm_title_equivalence(
@@ -295,16 +306,32 @@ class Matcher:
         song: NeteaseSong,
         score: CandidateScore,
         confidence: float,
-        reason: str,
+        reason_norm: str,
     ) -> bool:
-        reason_norm = normalize_text(reason)
         if confidence < max(self.min_confidence, 0.9):
             return False
         if not any(term in reason_norm for term in LLM_EQUIVALENCE_TERMS):
             return False
         if max(score.title_score, score.full_title_score) >= 0.45:
             return True
-        return score.artist_score >= self.min_artist_confidence or self._reason_mentions_artist_match(song, score.map, reason_norm)
+        return score.artist_score >= MIN_ARTIST_CONFIDENCE or self._reason_mentions_artist_match(song, score.map, reason_norm)
+
+    def _llm_allows_cover_artist_mismatch(
+        self,
+        song: NeteaseSong,
+        score: CandidateScore,
+        confidence: float,
+        reason_norm: str,
+    ) -> bool:
+        if confidence < max(self.min_confidence, 0.9):
+            return False
+        if not any(term in reason_norm for term in (*LLM_EQUIVALENCE_TERMS, *LLM_COVER_TERMS)):
+            return False
+        if is_short_or_generic_title(song.name):
+            return self._reason_mentions_artist_match(song, score.map, reason_norm)
+        if max(score.title_score, score.full_title_score) >= 0.72:
+            return True
+        return self._reason_mentions_artist_match(song, score.map, reason_norm)
 
     def _reason_mentions_artist_match(self, song: NeteaseSong, item: BeatSaverMap, reason_norm: str) -> bool:
         if not any(term in reason_norm for term in LLM_ARTIST_TERMS):

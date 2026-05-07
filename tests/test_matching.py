@@ -9,6 +9,7 @@ from beatsaver_sync.matching import (
     score_candidate,
     split_title_queries,
     title_needs_query_expansion,
+    is_short_or_generic_title,
 )
 from beatsaver_sync.models import Artist, BeatSaverDifficulty, BeatSaverMap, BeatSaverVersion, NeteaseSong
 
@@ -131,6 +132,12 @@ def test_title_needs_query_expansion_only_for_non_ascii() -> None:
     assert not title_needs_query_expansion("Love Trial")
 
 
+def test_short_or_generic_title_detection() -> None:
+    assert is_short_or_generic_title("Q")
+    assert is_short_or_generic_title("Baby")
+    assert not is_short_or_generic_title("恋愛裁判")
+
+
 @pytest.mark.asyncio
 async def test_llm_selection_must_pass_artist_gate() -> None:
     song = NeteaseSong(id=1, name="白夜洇润 Unfurling Night", artists=[Artist(name="HOYO-MiX")])
@@ -171,6 +178,57 @@ async def test_llm_selection_accepts_translation_when_reason_confirms_artist() -
 
     assert result.status == "matched"
     assert result.selected == correct
+
+
+@pytest.mark.asyncio
+async def test_cover_aware_mode_accepts_high_confidence_cover_relation() -> None:
+    song = NeteaseSong(id=1, name="Rolling Girl", artists=[Artist(name="acane_madder")])
+    original_map = make_map("correct", "Rolling Girl", "wowaka", ["Expert"])
+    judge = FakeJudge(
+        "correct",
+        confidence=0.95,
+        reason="This is the same song and an original/cover relationship; title matches Rolling Girl.",
+    )
+    matcher = Matcher(FakeBeatSaver([original_map]), judge, min_confidence=0.72, llm_threshold=1.0)
+
+    result = await matcher.match_song(song)
+
+    assert result.status == "matched"
+
+
+@pytest.mark.asyncio
+async def test_strict_mode_rejects_cover_artist_mismatch() -> None:
+    song = NeteaseSong(id=1, name="Rolling Girl", artists=[Artist(name="acane_madder")])
+    original_map = make_map("correct", "Rolling Girl", "wowaka", ["Expert"])
+    judge = FakeJudge(
+        "correct",
+        confidence=0.95,
+        reason="This is the same song and an original/cover relationship; title matches Rolling Girl.",
+    )
+    matcher = Matcher(
+        FakeBeatSaver([original_map]),
+        judge,
+        min_confidence=0.72,
+        llm_threshold=1.0,
+        artist_match_mode="strict",
+    )
+
+    result = await matcher.match_song(song)
+
+    assert result.status == "low_confidence"
+    assert result.selected is None
+
+
+@pytest.mark.asyncio
+async def test_cover_aware_mode_rejects_short_title_without_artist_confirmation() -> None:
+    song = NeteaseSong(id=1, name="Q", artists=[Artist(name="Rega")])
+    wrong = make_map("wrong", "Q", "Axiom Gr33ne", ["Expert"])
+    judge = FakeJudge("wrong", confidence=0.95, reason="This is the same song with the same title.")
+    matcher = Matcher(FakeBeatSaver([wrong]), judge, min_confidence=0.72, llm_threshold=1.0)
+
+    result = await matcher.match_song(song)
+
+    assert result.status == "low_confidence"
 
 
 @pytest.mark.asyncio

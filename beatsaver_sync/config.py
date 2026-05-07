@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .fs import read_json
 
@@ -16,8 +16,7 @@ class SyncConfig(BaseModel):
     output: Path = Path("output")
     search_with_artists: bool = False
     expand_search_with_llm: bool = True
-    require_artist_match: bool = True
-    min_artist_confidence: float = Field(default=0.45, ge=0.0, le=1.0)
+    artist_match_mode: Literal["strict", "cover_aware", "ignore"] = "cover_aware"
     search_concurrency: int = Field(default=5, ge=1)
     search_retries: int = Field(default=3, ge=1)
     download_concurrency: int = Field(default=3, ge=1)
@@ -34,6 +33,18 @@ class SyncConfig(BaseModel):
     @classmethod
     def expand_path(cls, value: Any) -> Path:
         return Path(value).expanduser()
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_artist_match_config(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        migrated = dict(data)
+        require_artist_match = migrated.pop("require_artist_match", None)
+        migrated.pop("min_artist_confidence", None)
+        if "artist_match_mode" not in migrated and require_artist_match is not None:
+            migrated["artist_match_mode"] = "strict" if require_artist_match else "ignore"
+        return migrated
 
 
 def load_config(path: Path) -> SyncConfig:
