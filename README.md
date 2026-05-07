@@ -167,3 +167,19 @@ BeatSaver 搜索请求失败时的重试次数。默认 `3`。如果日志里经
 - `output/reports/report.json`：结构化报告。
 
 BeatSaver 搜索缓存按搜索关键词复用，所以同名歌、翻唱、不同歌手版本可以共享搜索结果。匹配缓存按网易云歌曲 ID、歌名、歌手和关键匹配配置区分，不会把翻唱直接当成同一个匹配结果复用。下载按 BeatSaver 版本 hash 去重。只有索引记录存在，并且对应 zip 文件仍然存在时，才会认为该谱面已经下载过。
+
+## 下载低置信假阴
+
+如果报告里有低置信但你确认是正确的候选，先导出审核表：
+
+```powershell
+uv run beatsaver-sync review-low-confidence --min-confidence 0.0
+```
+
+这会生成 `output/reports/low-confidence-review.tsv`。用表格软件打开，把确认要下载的行第一列 `download` 从 `0` 改成 `1`，保存后运行：
+
+```powershell
+uv run beatsaver-sync download-review
+```
+
+下载仍然会复用 `output/downloads/index.json` 判重；已经下载过的 hash 会跳过。`review-low-confidence` 默认也会把 “Ollama 认为对，但本地歌手/标题门槛挡掉” 的候选放进表里，方便你手动放行。
