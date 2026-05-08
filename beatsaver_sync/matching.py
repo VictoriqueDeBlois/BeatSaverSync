@@ -167,6 +167,7 @@ class Matcher:
         llm_threshold: float = 0.82,
         search_with_artists: bool = False,
         expand_search_with_llm: bool = True,
+        download_all_matching_maps: bool = True,
         artist_match_mode: ArtistMatchMode = "cover_aware",
         ollama_concurrency: int = 1,
     ) -> None:
@@ -177,6 +178,7 @@ class Matcher:
         self.llm_threshold = llm_threshold
         self.search_with_artists = search_with_artists
         self.expand_search_with_llm = expand_search_with_llm
+        self.download_all_matching_maps = download_all_matching_maps
         self.artist_match_mode = artist_match_mode
         self.ollama_sem = asyncio.Semaphore(max(1, ollama_concurrency))
 
@@ -235,6 +237,7 @@ class Matcher:
                     confidence=confidence,
                     selected=selected,
                     selected_version=version,
+                    accepted=[selected] if status == "matched" else [],
                     queries=queries,
                     reason=f"Ollama: {reason}",
                     candidates=[item.map for item in scored[:8]],
@@ -251,14 +254,16 @@ class Matcher:
                     llm_used=True,
                 )
         status = "matched" if best.score >= self.min_confidence else "low_confidence"
+        accepted = self._accepted_rule_matches(scored) if status == "matched" else []
         return MatchResult(
             song=song,
             status=status,
             confidence=best.score,
             selected=best.map,
             selected_version=best.map.latest_version,
+            accepted=accepted,
             queries=queries,
-            reason=best.reason,
+            reason=self._format_rule_reason(best, accepted),
             candidates=[item.map for item in scored[:8]],
             llm_used=False,
         )
@@ -271,6 +276,26 @@ class Matcher:
         if len(scored) > 1 and scored[0].score - scored[1].score < self.llm_margin:
             return True
         return False
+
+    def _accepted_rule_matches(self, scored: list[CandidateScore]) -> list[BeatSaverMap]:
+        if not self.download_all_matching_maps:
+            return [scored[0].map]
+        accepted: list[BeatSaverMap] = []
+        seen_hashes: set[str] = set()
+        for item in scored:
+            version = item.map.latest_version
+            if item.score < self.min_confidence or not version:
+                continue
+            if version.hash in seen_hashes:
+                continue
+            accepted.append(item.map)
+            seen_hashes.add(version.hash)
+        return accepted
+
+    def _format_rule_reason(self, best: CandidateScore, accepted: list[BeatSaverMap]) -> str:
+        if len(accepted) <= 1:
+            return best.reason
+        return f"{best.reason}; accepted_maps={len(accepted)}"
 
     async def _search_queries(
         self,

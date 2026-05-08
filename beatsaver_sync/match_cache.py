@@ -67,15 +67,17 @@ def build_match_cache_namespace(
     min_confidence: float,
     search_with_artists: bool,
     expand_search_with_llm: bool,
+    download_all_matching_maps: bool,
     artist_match_mode: str,
     ollama_model: str,
     ollama_fallback_model: str | None,
 ) -> str:
     payload = {
-        "version": 4,
+        "version": 5,
         "min_confidence": min_confidence,
         "search_with_artists": search_with_artists,
         "expand_search_with_llm": expand_search_with_llm,
+        "download_all_matching_maps": download_all_matching_maps,
         "artist_match_mode": artist_match_mode,
         "ollama_model": ollama_model,
         "ollama_fallback_model": ollama_fallback_model,

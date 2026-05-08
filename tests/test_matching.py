@@ -95,6 +95,40 @@ def test_score_rewards_low_difficulty_when_song_matches() -> None:
     assert score_candidate(song, many_difficulties).score > score_candidate(song, expert_plus_only).score
 
 
+@pytest.mark.asyncio
+async def test_rule_matching_accepts_all_high_confidence_maps() -> None:
+    song = NeteaseSong(id=1, name="All Alone With You", artists=[Artist(name="EGOIST")])
+    map_a = make_map("a", "All Alone With You", "EGOIST", ["Expert"])
+    map_b = make_map("b", "All Alone With You", "EGOIST", ["Easy", "Normal", "Hard"])
+    matcher = Matcher(FakeBeatSaver([map_a, map_b]), FakeJudge("a"), min_confidence=0.72, llm_threshold=0.1, llm_margin=0.0)
+
+    result = await matcher.match_song(song)
+
+    assert result.status == "matched"
+    assert {item.id for item in result.accepted} == {"a", "b"}
+    assert "accepted_maps=2" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_rule_matching_can_keep_best_map_only() -> None:
+    song = NeteaseSong(id=1, name="All Alone With You", artists=[Artist(name="EGOIST")])
+    map_a = make_map("a", "All Alone With You", "EGOIST", ["Expert"])
+    map_b = make_map("b", "All Alone With You", "EGOIST", ["Easy", "Normal", "Hard"])
+    matcher = Matcher(
+        FakeBeatSaver([map_a, map_b]),
+        FakeJudge("a"),
+        min_confidence=0.72,
+        llm_threshold=0.1,
+        llm_margin=0.0,
+        download_all_matching_maps=False,
+    )
+
+    result = await matcher.match_song(song)
+
+    assert result.status == "matched"
+    assert len(result.accepted) == 1
+
+
 class FakeBeatSaver:
     def __init__(self, results: list[BeatSaverMap] | dict[str, list[BeatSaverMap]]) -> None:
         self.results = results

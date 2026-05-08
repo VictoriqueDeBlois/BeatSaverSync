@@ -67,6 +67,9 @@ def sync_command(
     expand_search_with_llm: Annotated[
         bool | None, typer.Option("--expand-search-with-llm/--no-llm-search-expansion")
     ] = None,
+    download_all_matching_maps: Annotated[
+        bool | None, typer.Option("--download-all-matching-maps/--best-map-only")
+    ] = None,
     artist_match_mode: Annotated[
         str | None, typer.Option("--artist-match-mode", help="strict, cover_aware, or ignore.")
     ] = None,
@@ -90,6 +93,7 @@ def sync_command(
             "output": output,
             "search_with_artists": search_with_artists,
             "expand_search_with_llm": expand_search_with_llm,
+            "download_all_matching_maps": download_all_matching_maps,
             "artist_match_mode": artist_match_mode,
             "search_concurrency": search_concurrency,
             "search_retries": search_retries,
@@ -112,6 +116,7 @@ def sync_command(
             output=config.output,
             search_with_artists=config.search_with_artists,
             expand_search_with_llm=config.expand_search_with_llm,
+            download_all_matching_maps=config.download_all_matching_maps,
             artist_match_mode=config.artist_match_mode,
             search_concurrency=config.search_concurrency,
             search_retries=config.search_retries,
@@ -174,6 +179,7 @@ async def run_sync(
     output: Path,
     search_with_artists: bool,
     expand_search_with_llm: bool,
+    download_all_matching_maps: bool,
     artist_match_mode: str,
     search_concurrency: int,
     search_retries: int,
@@ -214,6 +220,7 @@ async def run_sync(
         min_confidence=min_confidence,
         search_with_artists=search_with_artists,
         expand_search_with_llm=expand_search_with_llm,
+        download_all_matching_maps=download_all_matching_maps,
         artist_match_mode=artist_match_mode,
         ollama_concurrency=ollama_concurrency,
     )
@@ -223,6 +230,7 @@ async def run_sync(
             min_confidence=min_confidence,
             search_with_artists=search_with_artists,
             expand_search_with_llm=expand_search_with_llm,
+            download_all_matching_maps=download_all_matching_maps,
             artist_match_mode=artist_match_mode,
             ollama_model=ollama_model,
             ollama_fallback_model=ollama_fallback_model,
@@ -386,7 +394,8 @@ async def run_pipeline(
                         match_cache.set(match)
                     await record_match(match)
                     if match.status == "matched":
-                        await download_queue.put(match)
+                        for download_match in expand_download_matches(match):
+                            await download_queue.put(download_match)
                         progress.update(download_task, description=f"Downloads: {download_queue.qsize()} queued")
                     progress.update(match_task, advance=1, description=f"Matched: {song.name[:32]} ({match.status})")
                 finally:
@@ -423,6 +432,23 @@ async def run_pipeline(
             await download_queue.put(None)
         await download_queue.join()
         await asyncio.gather(*download_workers)
+
+
+def expand_download_matches(match: MatchResult) -> list[MatchResult]:
+    accepted = match.accepted or ([match.selected] if match.selected else [])
+    expanded: list[MatchResult] = []
+    seen_hashes: set[str] = set()
+    for item in accepted:
+        version = item.latest_version
+        if not version or version.hash in seen_hashes:
+            continue
+        expanded.append(
+            match.model_copy(update={"selected": item, "selected_version": version, "accepted": [item]}, deep=True)
+        )
+        seen_hashes.add(version.hash)
+    if expanded:
+        return expanded
+    return [match]
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ def render_markdown(report: RunReport) -> str:
         f"- Finished: {report.finished_at or ''}",
         f"- Total songs: {report.total_songs}",
         f"- Matched: {report.matched}",
+        f"- Download candidates: {sum(max(1, len(match.accepted)) for match in report.matches if match.status == 'matched')}",
         f"- Low confidence skipped: {report.low_confidence}",
         f"- Not found: {report.not_found}",
         f"- Search/match errors: {report.errors}",

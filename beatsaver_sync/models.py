@@ -71,6 +71,7 @@ class MatchResult(BaseModel):
     confidence: float = 0.0
     selected: BeatSaverMap | None = None
     selected_version: BeatSaverVersion | None = None
+    accepted: list[BeatSaverMap] = Field(default_factory=list)
     queries: list[str] = Field(default_factory=list)
     reason: str = ""
     candidates: list[BeatSaverMap] = Field(default_factory=list)

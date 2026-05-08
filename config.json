@@ -4,6 +4,7 @@
   "output": "output",
   "search_with_artists": false,
   "expand_search_with_llm": true,
+  "download_all_matching_maps": true,
   "artist_match_mode": "cover_aware",
   "search_concurrency": 5,
   "search_retries": 3,

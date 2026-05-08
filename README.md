@@ -52,6 +52,7 @@ uv run beatsaver-sync --config config.json
   "output": "output",
   "search_with_artists": false,
   "expand_search_with_llm": true,
+  "download_all_matching_maps": true,
   "artist_match_mode": "cover_aware",
   "search_concurrency": 5,
   "search_retries": 3,
@@ -116,6 +117,10 @@ uv run beatsaver-sync --limit 10
 - `cover_aware`：推荐。标题强匹配或 LLM 高置信说明是罗马音、翻译、翻唱、原曲关系时，允许 BeatSaver 歌手和网易云歌手不一致；但 `Q`、`Baby`、`Stay` 这类短标题/泛标题仍需要歌手证据。
 - `ignore`：最宽松。自动接受 LLM 候选时基本不看歌手，只看标题和 LLM 判断。适合你想多下载，之后人工筛。
 
+`download_all_matching_maps`
+
+是否下载同一首歌下所有高置信 BeatSaver 谱面。默认 `true`。如果一首歌搜出了多个不同 mapper 做的谱面，并且规则评分都高于 `min_confidence`，会把这些谱面都加入下载队列；下载仍然按 BeatSaver version hash 去重。改成 `false` 时恢复旧行为，只下载排序最高的一个谱面。
+
 `search_concurrency`
 
 BeatSaver 搜索和匹配阶段的并发数。默认 `5` 比较温和。调大可以更快，但也更容易遇到网络波动或接口限流；如果搜索经常失败，可以调低到 `2` 或 `3`。
@@ -172,7 +177,9 @@ flowchart TD
     D -- "没有" --> F["标记 not_found"]
     D -- "有" --> G["规则评分: 标题、完整标题、歌手、热度、难度覆盖"]
     G --> H{"规则分足够高且领先?"}
-    H -- "是" --> I["自动匹配并进入下载队列"]
+    H -- "是" --> V{"download_all_matching_maps?"}
+    V -- "是" --> I["所有高置信谱面进入下载队列"]
+    V -- "否" --> I2["最佳谱面进入下载队列"]
     H -- "否" --> J["Ollama 判断候选是否同一首歌"]
     J --> K{"Ollama 选中候选?"}
     K -- "否" --> L["标记 low_confidence"]
@@ -180,13 +187,14 @@ flowchart TD
     M -- "strict" --> N{"歌手相似或 LLM 明确同一歌手/别名?"}
     M -- "cover_aware" --> O{"标题强匹配，或 LLM 高置信说明罗马音/翻译/翻唱/原曲关系?"}
     M -- "ignore" --> P{"标题通过或 LLM 证明标题等价?"}
-    N -- "是" --> I
+    N -- "是" --> I2
     N -- "否" --> L
-    O -- "是，且不是短泛标题碰瓷" --> I
+    O -- "是，且不是短泛标题碰瓷" --> I2
     O -- "否" --> L
-    P -- "是" --> I
+    P -- "是" --> I2
     P -- "否" --> L
     I --> Q["按 BeatSaver version hash 判重"]
+    I2 --> Q
     Q --> R{"已下载且文件存在?"}
     R -- "是" --> S["跳过重复下载"]
     R -- "否" --> T["下载 zip 并更新 index.json"]

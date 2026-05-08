@@ -16,6 +16,7 @@ class SyncConfig(BaseModel):
     output: Path = Path("output")
     search_with_artists: bool = False
     expand_search_with_llm: bool = True
+    download_all_matching_maps: bool = True
     artist_match_mode: Literal["strict", "cover_aware", "ignore"] = "cover_aware"
     search_concurrency: int = Field(default=5, ge=1)
     search_retries: int = Field(default=3, ge=1)
