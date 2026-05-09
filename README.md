@@ -240,3 +240,19 @@ uv run beatsaver-sync download-review
 ```
 
 下载仍然会复用 `output/downloads/index.json` 判重；已经下载过的 hash 会跳过。`review-low-confidence` 默认也会把 “Ollama 认为对，但本地歌手/标题门槛挡掉” 的候选放进表里，方便你手动放行。
+
+## 生成 bplist
+
+下载完成后可以从 `output/downloads/index.json` 生成 Beat Saber 播放列表：
+
+```powershell
+uv run beatsaver-sync generate-playlist
+```
+
+默认输出到 `output/playlists/beatsaver-sync.bplist`，只包含索引里记录且 zip 文件仍然存在的谱面。可以自定义标题和作者：
+
+```powershell
+uv run beatsaver-sync generate-playlist `
+  --title "NetEase Liked BeatSaver" `
+  --author "haoran"
+```

@@ -28,6 +28,7 @@ from .match_cache import MatchCache, build_match_cache_namespace
 from .matching import Matcher
 from .models import DownloadResult, MatchResult, RunReport, ensure_directory
 from .netease import NeteaseClient
+from .playlist import build_bplist, load_download_index, write_bplist
 from .reports import write_report
 from .review import (
     build_low_confidence_review_rows,
@@ -172,6 +173,29 @@ def download_review_command(
             download_all=download_all,
         )
     )
+
+
+@app.command("generate-playlist")
+def generate_playlist_command(
+    index: Annotated[Path, typer.Option("--index", help="Download index path.")] = Path("output/downloads/index.json"),
+    out: Annotated[Path, typer.Option("--out", help="Output .bplist path.")] = Path(
+        "output/playlists/beatsaver-sync.bplist"
+    ),
+    title: Annotated[str, typer.Option("--title", help="Playlist title.")] = "BeatSaver Sync",
+    author: Annotated[str, typer.Option("--author", help="Playlist author.")] = "beatsaver-sync",
+    description: Annotated[str, typer.Option("--description", help="Playlist description.")] = "",
+    include_missing: Annotated[bool, typer.Option("--include-missing/--existing-files-only")] = False,
+) -> None:
+    download_index = load_download_index(index)
+    playlist = build_bplist(
+        download_index,
+        title=title,
+        author=author,
+        description=description,
+        existing_files_only=not include_missing,
+    )
+    write_bplist(playlist, out)
+    console.print(f"[green]Wrote {len(playlist['songs'])} songs.[/green] {out.resolve()}")
 
 
 async def run_sync(
