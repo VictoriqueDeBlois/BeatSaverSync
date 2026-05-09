@@ -249,7 +249,11 @@ uv run beatsaver-sync download-review
 uv run beatsaver-sync generate-playlist
 ```
 
-默认输出到 `output/playlists/beatsaver-sync.bplist`，只包含索引里记录且 zip 文件仍然存在的谱面。可以自定义标题和作者：
+默认输出到 `output/playlists/beatsaver-sync.bplist`，只包含索引里记录且 zip 文件仍然存在的谱面。
+
+生成 bplist 时会重新读取每个 zip 内部的 `Info.dat` 和难度文件，计算 Beat Saber/BSManager 实际识别的关卡 hash。这个 hash 不总是等于 BeatSaver API 返回的 `versions[].hash`，尤其是 `version: 4.x` 的谱面；下载去重仍然用 BeatSaver 版本 hash，但 `.bplist` 里会写游戏侧能识别的 hash，避免 BSManager 显示缺失。
+
+可以自定义标题和作者：
 
 ```powershell
 uv run beatsaver-sync generate-playlist `

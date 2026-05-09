@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from hashlib import sha1
 from pathlib import Path
+from zipfile import ZipFile
 
 from beatsaver_sync.models import DownloadIndex, DownloadRecord
-from beatsaver_sync.playlist import build_bplist, record_to_bplist_song, write_bplist
+from beatsaver_sync.playlist import build_bplist, compute_playlist_hash_from_zip, record_to_bplist_song, write_bplist
 
 
 def make_record(tmp_path: Path, version_hash: str = "hash-a") -> DownloadRecord:
@@ -33,6 +35,51 @@ def test_record_to_bplist_song_uses_beatsaver_key_and_hash(tmp_path: Path) -> No
         "songAuthorName": "Artist",
         "levelAuthorName": "",
     }
+
+
+def test_record_to_bplist_song_uses_computed_zip_playlist_hash(tmp_path: Path) -> None:
+    zip_path = tmp_path / "map.zip"
+    info = b'{"_difficultyBeatmapSets":[{"_difficultyBeatmaps":[{"_beatmapFilename":"Expert.dat"}]}]}'
+    beatmap = b'{"_notes":[]}'
+    with ZipFile(zip_path, "w") as archive:
+        archive.writestr("Info.dat", info)
+        archive.writestr("Expert.dat", beatmap)
+    record = make_record(tmp_path, "beatsaver-api-hash")
+    record.file_path = str(zip_path)
+
+    song = record_to_bplist_song(record)
+
+    assert song["hash"] == sha1(info + beatmap).hexdigest()
+
+
+def test_compute_playlist_hash_from_zip_supports_v4_lightshow_per_difficulty(tmp_path: Path) -> None:
+    zip_path = tmp_path / "v4-map.zip"
+    info = (
+        b'{"version":"4.0.1","difficultyBeatmaps":['
+        b'{"beatmapDataFilename":"Easy.dat","lightshowDataFilename":"Shared.lightshow.dat"},'
+        b'{"beatmapDataFilename":"Normal.dat","lightshowDataFilename":"Shared.lightshow.dat"}'
+        b"]}"
+    )
+    easy = b'{"colorNotes":[1]}'
+    normal = b'{"colorNotes":[2]}'
+    lightshow = b'{"basicEvents":[3]}'
+    with ZipFile(zip_path, "w") as archive:
+        archive.writestr("Info.dat", info)
+        archive.writestr("Easy.dat", easy)
+        archive.writestr("Normal.dat", normal)
+        archive.writestr("Shared.lightshow.dat", lightshow)
+
+    playlist_hash = compute_playlist_hash_from_zip(zip_path)
+
+    assert playlist_hash == sha1(info + easy + lightshow + normal + lightshow).hexdigest()
+
+
+def test_record_to_bplist_song_falls_back_to_beatsaver_hash_when_zip_invalid(tmp_path: Path) -> None:
+    record = make_record(tmp_path, "beatsaver-api-hash")
+
+    song = record_to_bplist_song(record)
+
+    assert song["hash"] == "beatsaver-api-hash"
 
 
 def test_build_bplist_skips_missing_files_by_default(tmp_path: Path) -> None:

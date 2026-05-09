@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
+from zipfile import BadZipFile, ZipFile
 
 from .fs import read_json
 from .models import DownloadIndex, DownloadRecord
@@ -41,11 +43,70 @@ def write_bplist(playlist: dict[str, Any], path: Path) -> Path:
 def record_to_bplist_song(record: DownloadRecord) -> dict[str, str]:
     return {
         "key": record.beatsaver_id,
-        "hash": record.version_hash,
+        "hash": playlist_hash_for_record(record),
         "songName": record.song_name,
         "songAuthorName": record.song_author,
         "levelAuthorName": "",
     }
+
+
+def playlist_hash_for_record(record: DownloadRecord) -> str:
+    file_path = Path(record.file_path)
+    if not file_path.exists():
+        return record.version_hash
+    try:
+        return compute_playlist_hash_from_zip(file_path)
+    except (BadZipFile, KeyError, OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return record.version_hash
+
+
+def compute_playlist_hash_from_zip(path: Path) -> str:
+    with ZipFile(path) as archive:
+        entries = {name.lower(): name for name in archive.namelist()}
+        info_name = _find_entry(entries, "Info.dat", "_Info.dat")
+        info_bytes = archive.read(info_name)
+        info = json.loads(info_bytes.decode("utf-8-sig"))
+        hasher = hashlib.sha1()
+        hasher.update(info_bytes)
+        for filename in _beatmap_hash_files(info):
+            hasher.update(archive.read(_find_entry(entries, filename)))
+        return hasher.hexdigest()
+
+
+def _beatmap_hash_files(info: dict[str, Any]) -> list[str]:
+    if isinstance(info.get("difficultyBeatmaps"), list):
+        return _v4_beatmap_hash_files(info["difficultyBeatmaps"])
+    return _legacy_beatmap_hash_files(info)
+
+
+def _v4_beatmap_hash_files(difficulties: list[dict[str, Any]]) -> list[str]:
+    files: list[str] = []
+    for difficulty in difficulties:
+        beatmap_filename = difficulty.get("beatmapDataFilename")
+        lightshow_filename = difficulty.get("lightshowDataFilename")
+        if beatmap_filename:
+            files.append(str(beatmap_filename))
+        if lightshow_filename:
+            files.append(str(lightshow_filename))
+    return files
+
+
+def _legacy_beatmap_hash_files(info: dict[str, Any]) -> list[str]:
+    files: list[str] = []
+    for beatmap_set in info.get("_difficultyBeatmapSets", []):
+        for difficulty in beatmap_set.get("_difficultyBeatmaps", []):
+            beatmap_filename = difficulty.get("_beatmapFilename")
+            if beatmap_filename:
+                files.append(str(beatmap_filename))
+    return files
+
+
+def _find_entry(entries: dict[str, str], *names: str) -> str:
+    for name in names:
+        entry = entries.get(name.lower())
+        if entry:
+            return entry
+    raise KeyError(names[0])
 
 
 def _include_record(record: DownloadRecord, existing_files_only: bool) -> bool:
